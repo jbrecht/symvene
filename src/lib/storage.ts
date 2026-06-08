@@ -1,27 +1,38 @@
-// The API key is stored only in the user's browser. It is never sent anywhere
-// except directly to the Anthropic API.
+// API keys are stored only in the user's browser. They are never sent anywhere
+// except directly to the API they belong to (Anthropic, or Voyage for embeddings).
 const KEY_STORAGE = "symvene.anthropic_key";
+const VOYAGE_KEY_STORAGE = "symvene.voyage_key";
 
-export function loadKey(): string | null {
+function load(name: string): string | null {
   try {
-    return localStorage.getItem(KEY_STORAGE);
+    return localStorage.getItem(name);
   } catch {
     return null;
   }
 }
 
-export function saveKey(key: string): void {
+function save(name: string, value: string): void {
   try {
-    localStorage.setItem(KEY_STORAGE, key);
+    localStorage.setItem(name, value);
   } catch {
-    // ignore (private mode etc.) — key just won't persist
+    // ignore (private mode etc.) — value just won't persist
   }
 }
 
-export function clearKey(): void {
+function clear(name: string): void {
   try {
-    localStorage.removeItem(KEY_STORAGE);
+    localStorage.removeItem(name);
   } catch {
     // ignore
   }
 }
+
+export const loadKey = () => load(KEY_STORAGE);
+export const saveKey = (key: string) => save(KEY_STORAGE, key);
+export const clearKey = () => clear(KEY_STORAGE);
+
+// The Voyage key powers client-side RAG embeddings. Optional — only set when the
+// user wants to add source material.
+export const loadVoyageKey = () => load(VOYAGE_KEY_STORAGE);
+export const saveVoyageKey = (key: string) => save(VOYAGE_KEY_STORAGE, key);
+export const clearVoyageKey = () => clear(VOYAGE_KEY_STORAGE);

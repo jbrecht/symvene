@@ -25,9 +25,14 @@ function buildPrompt(
   brief: string,
   completedRounds: ExpertResponse[][],
   currentRound: ExpertResponse[],
-  roundIndex: number
+  roundIndex: number,
+  sources: string
 ): string {
   let prompt = `BRIEF:\n${brief}\n\n`;
+
+  if (sources) {
+    prompt += `SOURCE MATERIAL (provided by the person who posed the brief). Ground your claims in it and cite the relevant source as [Source N]. Where the material doesn't cover a point, reason from your own expertise and say so plainly — do not invent facts or citations:\n\n${sources}\n\n`;
+  }
 
   completedRounds.forEach((round, i) => {
     prompt += `=== ROUND ${i + 1}: ${ROUND_TITLES[i] ?? `Round ${i + 1}`} ===\n\n`;
@@ -80,13 +85,20 @@ async function callExpert(
   return response;
 }
 
+export interface RoundtableOptions {
+  roundCount?: number;
+  sources?: string; // optional RAG source material, injected into every expert turn
+}
+
 export async function runRoundtable(
   client: Anthropic,
   brief: string,
   experts: Expert[],
   cb: RoundtableCallbacks = {},
-  roundCount = ROUND_INSTRUCTIONS.length
+  opts: RoundtableOptions = {}
 ): Promise<RoundtableSession> {
+  const roundCount = opts.roundCount ?? ROUND_INSTRUCTIONS.length;
+  const sources = opts.sources ?? "";
   const rounds: ExpertResponse[][] = [];
 
   for (let roundIndex = 0; roundIndex < roundCount; roundIndex++) {
@@ -94,7 +106,7 @@ export async function runRoundtable(
     const currentRound: ExpertResponse[] = [];
 
     for (const expert of experts) {
-      const prompt = buildPrompt(brief, rounds, currentRound, roundIndex);
+      const prompt = buildPrompt(brief, rounds, currentRound, roundIndex, sources);
       const response = await callExpert(client, expert, prompt, roundIndex + 1, cb);
       currentRound.push(response);
     }

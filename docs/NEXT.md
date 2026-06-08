@@ -22,10 +22,21 @@ experts.
   expert-count selector on the compose screen.
 - `src/engine/demoPanel.ts` removed (the Facilitator replaces it).
 
-## Next: Phase 2
-- Client-side RAG: doc upload → local vector store (Voyage embeddings) → grounded experts.
+## In progress: Phase 2 (branch `phase-2-rag`)
+**Client-side RAG — DONE.** Doc upload → Voyage embeddings → IndexedDB → grounded experts.
+- `engine/voyage.ts` (embeddings client; Voyage allows browser CORS, so still no backend —
+  but needs a *second* BYO key), `engine/chunk.ts` (boundary-aware chunking), `engine/pdf.ts`
+  (pdfjs text extraction, lazy-loaded), `engine/retrieval.ts` (types + cosine top-k),
+  `engine/rag.ts` (`ingestDocument`/`retrieve`).
+- `lib/ragStore.ts` (IndexedDB persistence), `lib/storage.ts` (+ Voyage key).
+- `components/SourcePanel.tsx` (collapsible upload/paste/list UI on the compose screen).
+- `roundtable.ts` gained `opts.sources`; `RoundtableView` retrieves for the brief and injects.
+- Default embedding model: `VOYAGE_MODEL = "voyage-4"` (one-line change in `engine/voyage.ts`).
+
+**Still TODO for Phase 2:**
 - Saved / reusable expert panels.
 - Transcript export (markdown) — `buildTranscript` in `synthesizer.ts` is a starting point.
+- Possible polish: show *which* sources each round cited; let the Facilitator see the corpus.
 
 ## Later
 - Phase 3: optional accounts / sharing / hosted panels.

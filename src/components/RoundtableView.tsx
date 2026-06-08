@@ -2,28 +2,46 @@ import { useRef, useState } from "react";
 import { makeClient } from "../engine/client";
 import { runRoundtable, ROUND_TITLES } from "../engine/roundtable";
 import { runSynthesis } from "../engine/synthesizer";
+import { retrieve } from "../engine/rag";
+import { formatSources } from "../engine/retrieval";
+import type { DocChunk } from "../engine/retrieval";
 import type { Expert, ExpertResponse } from "../engine/types";
 
 type RunState = {
   rounds: ExpertResponse[][];
   synthesis: string;
-  status: "idle" | "running" | "synthesizing" | "done" | "error";
+  status: "idle" | "retrieving" | "running" | "synthesizing" | "done" | "error";
   error: string;
+  retrievedCount: number;
+  sourcesNote: string; // non-fatal warning if retrieval failed
 };
 
-const INITIAL: RunState = { rounds: [], synthesis: "", status: "idle", error: "" };
+const INITIAL: RunState = {
+  rounds: [],
+  synthesis: "",
+  status: "idle",
+  error: "",
+  retrievedCount: 0,
+  sourcesNote: "",
+};
 
 export function RoundtableView({
   apiKey,
   experts,
   brief,
+  voyageKey,
+  chunks,
 }: {
   apiKey: string;
   experts: Expert[];
   brief: string;
+  voyageKey: string | null;
+  chunks: DocChunk[];
 }) {
   const [state, setState] = useState<RunState>(INITIAL);
   const started = useRef(false);
+
+  const hasCorpus = !!voyageKey && chunks.length > 0;
 
   async function run() {
     if (started.current) return;
@@ -33,32 +51,56 @@ export function RoundtableView({
     try {
       const client = makeClient(apiKey);
 
-      const session = await runRoundtable(client, brief, experts, {
-        onTurnStart: (expert, round) => {
-          setState((s) => {
-            const rounds = s.rounds.map((r) => [...r]);
-            while (rounds.length < round) rounds.push([]);
-            rounds[round - 1].push({
-              expertId: expert.id,
-              displayName: expert.displayName,
-              round,
-              content: "",
+      // Retrieve grounding material from the user's corpus, if any.
+      let sources = "";
+      if (hasCorpus) {
+        setState((s) => ({ ...s, status: "retrieving" }));
+        try {
+          const retrieved = await retrieve(voyageKey!, brief, chunks);
+          sources = formatSources(retrieved);
+          setState((s) => ({ ...s, status: "running", retrievedCount: retrieved.length }));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setState((s) => ({
+            ...s,
+            status: "running",
+            sourcesNote: `Couldn't retrieve source material (${msg}). Running the debate without it.`,
+          }));
+        }
+      }
+
+      const session = await runRoundtable(
+        client,
+        brief,
+        experts,
+        {
+          onTurnStart: (expert, round) => {
+            setState((s) => {
+              const rounds = s.rounds.map((r) => [...r]);
+              while (rounds.length < round) rounds.push([]);
+              rounds[round - 1].push({
+                expertId: expert.id,
+                displayName: expert.displayName,
+                round,
+                content: "",
+              });
+              return { ...s, rounds };
             });
-            return { ...s, rounds };
-          });
+          },
+          onText: (_expert, round, delta) => {
+            setState((s) => {
+              const rounds = s.rounds.map((r) => [...r]);
+              const turn = rounds[round - 1][rounds[round - 1].length - 1];
+              rounds[round - 1][rounds[round - 1].length - 1] = {
+                ...turn,
+                content: turn.content + delta,
+              };
+              return { ...s, rounds };
+            });
+          },
         },
-        onText: (_expert, round, delta) => {
-          setState((s) => {
-            const rounds = s.rounds.map((r) => [...r]);
-            const turn = rounds[round - 1][rounds[round - 1].length - 1];
-            rounds[round - 1][rounds[round - 1].length - 1] = {
-              ...turn,
-              content: turn.content + delta,
-            };
-            return { ...s, rounds };
-          });
-        },
-      });
+        { sources }
+      );
 
       setState((s) => ({ ...s, status: "synthesizing" }));
       await runSynthesis(client, session, {
@@ -75,17 +117,40 @@ export function RoundtableView({
 
   if (state.status === "idle") {
     return (
-      <button
-        onClick={run}
-        className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500"
-      >
-        Start roundtable
-      </button>
+      <div className="space-y-2">
+        <button
+          onClick={run}
+          className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500"
+        >
+          Start roundtable
+        </button>
+        {hasCorpus && (
+          <p className="text-xs text-neutral-500">
+            Experts will be grounded in your {chunks.length} source chunk
+            {chunks.length === 1 ? "" : "s"}.
+          </p>
+        )}
+      </div>
     );
   }
 
   return (
     <div className="space-y-8">
+      {state.status === "retrieving" && (
+        <p className="text-xs text-violet-400">Retrieving source material…</p>
+      )}
+      {state.retrievedCount > 0 && (
+        <p className="text-xs text-emerald-400">
+          Grounded in {state.retrievedCount} source passage
+          {state.retrievedCount === 1 ? "" : "s"}.
+        </p>
+      )}
+      {state.sourcesNote && (
+        <p className="rounded-lg border border-amber-900 bg-amber-950/30 p-2 text-xs text-amber-300">
+          {state.sourcesNote}
+        </p>
+      )}
+
       {state.rounds.map((round, i) => (
         <section key={i}>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-violet-400">
@@ -124,9 +189,7 @@ export function RoundtableView({
         </p>
       )}
 
-      {state.status === "done" && (
-        <p className="text-xs text-neutral-500">Done.</p>
-      )}
+      {state.status === "done" && <p className="text-xs text-neutral-500">Done.</p>}
     </div>
   );
 }
