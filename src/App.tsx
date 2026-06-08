@@ -1,13 +1,26 @@
 import { useState } from "react";
 import { KeyEntry } from "./components/KeyEntry";
+import { FacilitatorView } from "./components/FacilitatorView";
 import { RoundtableView } from "./components/RoundtableView";
-import { DEMO_PANEL } from "./engine/demoPanel";
+import { MIN_EXPERTS, MAX_EXPERTS, DEFAULT_EXPERTS } from "./engine/facilitator";
+import type { Expert } from "./engine/types";
 import { loadKey, clearKey } from "./lib/storage";
+
+type Stage =
+  | { name: "compose" }
+  | { name: "facilitate"; brief: string; expertCount: number | null }
+  | { name: "roundtable"; brief: string; experts: Expert[] };
+
+const COUNT_OPTIONS = Array.from(
+  { length: MAX_EXPERTS - MIN_EXPERTS + 1 },
+  (_, i) => MIN_EXPERTS + i
+);
 
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(() => loadKey());
   const [brief, setBrief] = useState("");
-  const [activeBrief, setActiveBrief] = useState<string | null>(null);
+  const [count, setCount] = useState<number | "auto">("auto");
+  const [stage, setStage] = useState<Stage>({ name: "compose" });
 
   if (!apiKey) {
     return <KeyEntry onReady={setApiKey} />;
@@ -16,8 +29,9 @@ function App() {
   function reset() {
     clearKey();
     setApiKey(null);
-    setActiveBrief(null);
+    setStage({ name: "compose" });
     setBrief("");
+    setCount("auto");
   }
 
   return (
@@ -29,12 +43,11 @@ function App() {
         </button>
       </header>
 
-      {!activeBrief ? (
+      {stage.name === "compose" && (
         <div className="space-y-4">
           <p className="text-sm text-neutral-400">
-            Phase&nbsp;0 preview — running a fixed demo panel (Visionary / Skeptic /
-            Pragmatist). The Facilitator that builds a custom panel for your question comes
-            next.
+            Describe your question and the Facilitator will interview you, then assemble
+            a panel of experts who debate it.
           </p>
           <textarea
             value={brief}
@@ -43,32 +56,80 @@ function App() {
             placeholder="What do you want the panel to debate? Describe your question or goal…"
             className="w-full rounded-xl border border-neutral-800 bg-neutral-900/60 p-4 text-sm text-white outline-none focus:border-violet-500"
           />
-          <button
-            onClick={() => setActiveBrief(brief.trim())}
-            disabled={!brief.trim()}
-            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-40"
-          >
-            Convene the panel
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-sm text-neutral-400">Experts:</label>
+            <select
+              value={count}
+              onChange={(e) =>
+                setCount(e.target.value === "auto" ? "auto" : Number(e.target.value))
+              }
+              className="rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-violet-500"
+            >
+              <option value="auto">Let the Facilitator decide ({DEFAULT_EXPERTS})</option>
+              {COUNT_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() =>
+                setStage({
+                  name: "facilitate",
+                  brief: brief.trim(),
+                  expertCount: count === "auto" ? null : count,
+                })
+              }
+              disabled={!brief.trim()}
+              className="ml-auto rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-40"
+            >
+              Convene the panel
+            </button>
+          </div>
         </div>
-      ) : (
+      )}
+
+      {stage.name !== "compose" && (
         <div className="space-y-6">
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
             <div className="text-xs font-semibold uppercase tracking-widest text-neutral-500">
               Brief
             </div>
-            <p className="mt-1 text-sm text-neutral-200">{activeBrief}</p>
-            <div className="mt-2 text-xs text-neutral-500">
-              Panel: {DEMO_PANEL.map((e) => e.displayName).join(", ")}
-            </div>
+            <p className="mt-1 text-sm text-neutral-200">{stage.brief}</p>
+            {stage.name === "roundtable" && (
+              <div className="mt-2 text-xs text-neutral-500">
+                Panel: {stage.experts.map((e) => e.displayName).join(", ")}
+              </div>
+            )}
           </div>
-          <RoundtableView apiKey={apiKey} experts={DEMO_PANEL} brief={activeBrief} />
-          <button
-            onClick={() => setActiveBrief(null)}
-            className="text-xs text-neutral-500 hover:text-neutral-300"
-          >
-            ← new brief
-          </button>
+
+          {stage.name === "facilitate" && (
+            <FacilitatorView
+              apiKey={apiKey}
+              brief={stage.brief}
+              expertCount={stage.expertCount}
+              onPanelReady={(experts) =>
+                setStage({ name: "roundtable", brief: stage.brief, experts })
+              }
+              onBack={() => setStage({ name: "compose" })}
+            />
+          )}
+
+          {stage.name === "roundtable" && (
+            <>
+              <RoundtableView
+                apiKey={apiKey}
+                experts={stage.experts}
+                brief={stage.brief}
+              />
+              <button
+                onClick={() => setStage({ name: "compose" })}
+                className="text-xs text-neutral-500 hover:text-neutral-300"
+              >
+                ← new brief
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

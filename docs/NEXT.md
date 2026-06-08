@@ -3,33 +3,31 @@
 ## Done (Phase 0 + key entry)
 - `src/engine/` — framework-agnostic debate engine ported from math-talk:
   - `types.ts`, `client.ts` (browser Anthropic + `validateKey`), `roundtable.ts`
-    (N-round orchestration, streaming callbacks), `synthesizer.ts` (roster-aware),
-    `demoPanel.ts` (temporary Visionary/Skeptic/Pragmatist trio).
+    (N-round orchestration, streaming callbacks), `synthesizer.ts` (roster-aware).
 - `src/components/KeyEntry.tsx`, `src/components/RoundtableView.tsx`, `src/App.tsx`.
 - `npm run build` and `npm run dev` both verified.
 
-## Next: Phase 1b — the Facilitator (the differentiator)
-An agent that interviews the user and drafts three deliberately-conflicting experts.
+## Done (Phase 1b — the Facilitator)
+The differentiator: an agent that interviews the user and drafts deliberately-conflicting
+experts.
+- `src/engine/facilitator.ts` — Sonnet agent. `facilitatorTurn()` runs one streamed turn
+  against the message history and returns either a clarifying `question` or a `panel` via
+  the forced `propose_panel` tool. System prompt is tuned to design panels whose lenses
+  genuinely clash. `normalizeExperts()` assigns the expert model + de-dupes ids.
+  `MIN_EXPERTS`/`MAX_EXPERTS`/`DEFAULT_EXPERTS` = 2 / 5 / 3.
+- `src/components/FacilitatorView.tsx` — drives the conversational intake, then renders the
+  proposed panel as editable cards (tweak name/persona, add/remove within 2–5, regenerate),
+  and hands the final `Expert[]` to the roundtable.
+- `src/App.tsx` — `compose` → `facilitate` → `roundtable` stage machine, with an
+  expert-count selector on the compose screen.
+- `src/engine/demoPanel.ts` removed (the Facilitator replaces it).
 
-1. **Facilitator system prompt** (Sonnet) tuned to design panels whose lenses
-   genuinely clash (the way math-talk's Rivera/Chen/Alex do) — not three polite
-   variations on the same view.
-2. **Conversational intake** — asks 2-4 clarifying questions about the user's goal
-   and what kind of disagreement would be useful.
-3. **`propose_panel` tool** (forced/structured output) returning 3 `Expert` objects
-   (`id`, `displayName`, `model`, `systemPrompt`) — each engineered to push back,
-   with a distinct voice and real expertise.
-4. **Editable review cards** — user tweaks names/prompts or regenerates, then
-   "Start roundtable" passes the panel to `runRoundtable` (replaces `demoPanel.ts`).
-
-### Expert count — DECIDED (2026-06-04)
-**User-selectable 2-5 experts, default 3.** The engine already handles any N. The
-Facilitator should propose 3 by default but let the user request a different count
-(2-5), and the review UI should allow adding/removing an expert within that range.
+## Next: Phase 2
+- Client-side RAG: doc upload → local vector store (Voyage embeddings) → grounded experts.
+- Saved / reusable expert panels.
+- Transcript export (markdown) — `buildTranscript` in `synthesizer.ts` is a starting point.
 
 ## Later
-- Phase 2: client-side RAG (doc upload → local vector store → grounded experts),
-  saved panels, transcript export (markdown).
 - Phase 3: optional accounts / sharing / hosted panels.
 
 ## Lineage

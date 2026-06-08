@@ -34,9 +34,9 @@ Open the local URL, paste an Anthropic key, and convene a panel.
 ## Status / roadmap
 
 - **Phase 0 ✅** — debate engine ported and running in-browser; key entry.
-- **Phase 1 (in progress)** — the Facilitator: an agent that interviews you and
-  drafts three custom experts you can review and edit before the roundtable.
-  (Currently a fixed demo panel of Visionary / Skeptic / Pragmatist.)
+- **Phase 1 ✅** — the Facilitator: an agent that interviews you and drafts a
+  panel of deliberately-conflicting experts (2–5, default 3) you can review and
+  edit before the roundtable.
 - **Phase 2** — client-side RAG (upload docs → local vector store → grounded
   experts), saved expert panels, transcript export.
 - **Phase 3** — optional accounts, sharing, hosted panels.
@@ -50,7 +50,7 @@ src/
 │   ├── client.ts       # browser Anthropic client + key validation
 │   ├── roundtable.ts   # multi-round orchestration with streaming callbacks
 │   ├── synthesizer.ts  # roster-aware synthesis
-│   └── demoPanel.ts    # temporary fixed panel (replaced by the Facilitator)
+│   └── facilitator.ts  # interviews the user, designs a conflicting panel
 ├── components/       # React UI
 ├── lib/storage.ts    # localStorage key handling
 └── App.tsx           # screen flow
