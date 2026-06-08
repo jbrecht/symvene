@@ -45,8 +45,8 @@ DOM APIs into `src/engine/`.
   `ROUND_INSTRUCTIONS` array** — round count, per-round framing, and `ROUND_TITLES` are all
   driven by these parallel arrays. Each turn is streamed; progress is reported via the
   `RoundtableCallbacks` (`onPhase`/`onTurnStart`/`onText`/`onTurnEnd`). The optional
-  `opts.sources` (a RAG block) is injected into every expert turn with an instruction to
-  ground claims in it and cite `[Source N]`.
+  `opts.sourcesFor(expertId)` returns a **per-expert** RAG block, injected into that expert's
+  turns with an instruction to ground claims in it and cite `[Source N]`.
 - **`synthesizer.ts`** — `runSynthesis()` takes a completed session, builds a
   roster-aware prompt (it names the actual experts so it won't invent ones), and streams a
   ~400-word actionable summary.
@@ -56,11 +56,17 @@ DOM APIs into `src/engine/`.
   `question` (stream it via `onText`) **or** the proposed `panel`. The conversation is a
   standard tool-use loop driven by the UI: the returned `assistant` message is appended to
   the history before the next turn. Panel size is bounded by `MIN_EXPERTS`/`MAX_EXPERTS`
-  (2–5, default 3). `normalizeExperts()` assigns the expert model and de-dupes ids.
+  (2–5, default 3). `normalizeExperts()` assigns the expert model and de-dupes ids. The
+  `propose_panel` tool also returns per-expert `informationNeeds` (descriptions of evidence
+  each expert wants — *not* fabricated citations), surfaced on the review cards.
 
 #### RAG (client-side, optional — Phase 2)
 
 The corpus is a flat list of embedded chunks; retrieval is brute-force cosine in-browser.
+**Scope:** each chunk/doc carries an optional `expertId` — `undefined` ⇒ a shared "problem"
+document every expert sees; a value ⇒ a document private to that one expert. `scopedChunks()`
+returns an expert's view (its own ∪ shared). Shared docs persist in IndexedDB; **per-expert
+docs are session-scoped (in-memory only)** because expert ids aren't stable across panels.
 - **`voyage.ts`** — Voyage embeddings client (`embed(key, texts, "document"|"query")`,
   batched; `validateVoyageKey`). Called directly from the browser — **Voyage returns
   permissive CORS**, so no backend is needed. `VOYAGE_MODEL` is the single place to change
@@ -70,10 +76,11 @@ The corpus is a flat list of embedded chunks; retrieval is brute-force cosine in
 - **`pdf.ts`** — `extractPdfText()` via `pdfjs-dist`. **Dynamically imported** from
   `SourcePanel` so pdfjs + its worker stay out of the initial bundle (separate `pdf-*.js`
   chunk). Worker URL comes from a Vite `?url` import. No OCR — scanned PDFs yield no text.
-- **`retrieval.ts`** — `DocChunk`/`RagDoc` types, `cosineSimilarity`, `search()` (top-k with
-  a `minScore` floor), `formatSources()` (renders chunks into the prompt block).
-- **`rag.ts`** — orchestration: `ingestDocument()` (chunk → embed → assemble) and
-  `retrieve()` (embed query → search). `DEFAULT_TOP_K`.
+- **`retrieval.ts`** — `DocChunk`/`RagDoc` types (with `expertId` scope), `cosineSimilarity`,
+  `search()` (top-k with a `minScore` floor), `scopedChunks()` (an expert's own ∪ shared),
+  `formatSources()` (renders chunks into the prompt block).
+- **`rag.ts`** — orchestration: `ingestDocument()` (chunk → embed → assemble, scoped by
+  optional `expertId`) and `retrieve()` (embed query → search). `DEFAULT_TOP_K`.
 
 ### UI (`src/`)
 
@@ -83,17 +90,19 @@ The corpus is a flat list of embedded chunks; retrieval is brute-force cosine in
 - **`components/KeyEntry.tsx`** — key paste + live validation gate.
 - **`components/FacilitatorView.tsx`** — drives the intake conversation (holds the
   `Anthropic.MessageParam[]` history in a ref, streams facilitator questions, collects user
-  answers) and then renders the proposed panel as **editable cards** (tweak name/persona,
-  add/remove within 2–5, regenerate). On "Start roundtable" it hands the final `Expert[]`
-  up to `App` via `onPanelReady`.
-- **`components/RoundtableView.tsx`** — drives a run: optionally **retrieves** source
-  chunks for the brief (when a Voyage key + corpus exist), then calls `runRoundtable` (with
-  `sources`) and `runSynthesis`, translating streaming callbacks into incremental React
-  state. Retrieval failure is non-fatal — the debate proceeds ungrounded with a warning.
-  Uses a `started` ref to guard against double-starting under React strict mode.
+  answers) and then renders the proposed panel as **editable cards**. Each card shows the
+  expert's `informationNeeds` and a per-expert `DocUploader` (its private corpus). On a new
+  panel it calls `onResetExpertDocs` to drop the prior panel's per-expert docs. "Start
+  roundtable" hands the final `Expert[]` to `App`.
+- **`components/RoundtableView.tsx`** — drives a run: **per-expert** retrieval (each expert
+  retrieves from `scopedChunks` for the brief), then calls `runRoundtable` (with `sourcesFor`)
+  and `runSynthesis`, translating streaming callbacks into React state. Per-expert retrieval
+  failure is non-fatal — only that expert runs ungrounded. `started` ref guards double-start.
+- **`components/DocUploader.tsx`** — reusable file(.txt/.md/.pdf, lazy pdfjs) + paste
+  ingestion, parameterised by an optional `expertId` scope; hands `(doc, chunks)` to its
+  caller. Used by both `SourcePanel` (shared) and `FacilitatorView` (per-expert).
 - **`components/SourcePanel.tsx`** — collapsible "source material" section on the compose
-  screen: Voyage key gate, file (.txt/.md/.pdf) + paste ingestion, and the doc list. Does
-  ingestion; hands `(doc, chunks)` to `App` to persist.
+  screen: Voyage key gate, a shared-scope `DocUploader`, and the **shared** doc list.
 - **`lib/storage.ts`** — `localStorage` keys (try/catch for private mode): the Anthropic key
   (`symvene.anthropic_key`) and the optional Voyage key (`symvene.voyage_key`).
 - **`lib/ragStore.ts`** — IndexedDB persistence (`symvene-rag` DB, `docs` + `chunks` stores)
@@ -102,13 +111,13 @@ The corpus is a flat list of embedded chunks; retrieval is brute-force cosine in
 
 ### Data flow
 
-`KeyEntry` → key in `localStorage` → `App` collects a brief (and optionally source docs via
-`SourcePanel`, embedded with Voyage and stored in IndexedDB) → `FacilitatorView` interviews
-the user and produces an `Expert[]` panel → `RoundtableView` retrieves grounding chunks for
-the brief, then calls `runRoundtable(client, brief, experts, callbacks, { sources })` →
-streamed `ExpertResponse[][]` → `runSynthesis(client, session)` → streamed synthesis string.
-Experts are plain data passed between layers, so the panel's *source* (Facilitator, a saved
-panel, etc.) is decoupled from the debate engine.
+`KeyEntry` → key in `localStorage` → `App` collects a brief (and optionally **shared** source
+docs via `SourcePanel`) → `FacilitatorView` interviews the user, proposes a panel with
+per-expert `informationNeeds`, and lets the user attach **per-expert** docs → `RoundtableView`
+retrieves grounding *per expert* (own ∪ shared chunks) and calls
+`runRoundtable(client, brief, experts, callbacks, { sourcesFor })` → streamed
+`ExpertResponse[][]` → `runSynthesis(client, session)` → streamed synthesis string. `App` owns
+the corpus + Voyage key; the engine never touches storage.
 
 ## Stack notes
 

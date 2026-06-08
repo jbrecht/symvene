@@ -4,6 +4,9 @@ export interface Expert {
   displayName: string; // e.g. "DR. CHEN (Cognitive Scientist)"
   model: string; // Claude model id used for this expert's turns
   systemPrompt: string; // the full persona definition
+  // Descriptions of evidence this expert would like grounded in its own corpus, authored
+  // by the Facilitator. Fulfilled (optionally) by the user attaching documents to the expert.
+  informationNeeds?: string[];
 }
 
 // One expert's contribution in one round.

@@ -6,6 +6,8 @@
 export type DocKind = "text" | "markdown" | "pdf" | "pasted";
 
 // A source document the user added. The text itself lives in its chunks.
+// `expertId` undefined ⇒ a shared "problem" doc available to every expert; a value ⇒ a
+// document private to that one expert's corpus.
 export interface RagDoc {
   id: string;
   name: string;
@@ -13,6 +15,7 @@ export interface RagDoc {
   addedAt: number; // epoch ms
   charCount: number;
   chunkCount: number;
+  expertId?: string;
 }
 
 // One embedded slice of a document.
@@ -23,11 +26,18 @@ export interface DocChunk {
   index: number;
   text: string;
   embedding: Float32Array;
+  expertId?: string; // mirrors the parent doc's scope (see RagDoc.expertId)
 }
 
 export interface RetrievedChunk {
   chunk: DocChunk;
   score: number; // cosine similarity in [-1, 1]
+}
+
+// The chunks an expert may retrieve from: its own private documents plus every shared
+// ("problem") document. Pass the same corpus for every expert; only the scope differs.
+export function scopedChunks(chunks: DocChunk[], expertId: string): DocChunk[] {
+  return chunks.filter((c) => c.expertId === expertId || c.expertId == null);
 }
 
 // Cosine similarity. Voyage embeddings are L2-normalised, so this is effectively

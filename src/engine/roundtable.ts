@@ -31,7 +31,7 @@ function buildPrompt(
   let prompt = `BRIEF:\n${brief}\n\n`;
 
   if (sources) {
-    prompt += `SOURCE MATERIAL (provided by the person who posed the brief). Ground your claims in it and cite the relevant source as [Source N]. Where the material doesn't cover a point, reason from your own expertise and say so plainly — do not invent facts or citations:\n\n${sources}\n\n`;
+    prompt += `SOURCE MATERIAL available to you (this may include documents you requested). Ground your claims in it and cite the relevant source as [Source N]. Where the material doesn't cover a point you need — including evidence you asked for but wasn't provided — reason from your own expertise and say so plainly. Do not invent facts or citations:\n\n${sources}\n\n`;
   }
 
   completedRounds.forEach((round, i) => {
@@ -87,7 +87,9 @@ async function callExpert(
 
 export interface RoundtableOptions {
   roundCount?: number;
-  sources?: string; // optional RAG source material, injected into every expert turn
+  // Per-expert RAG source material, injected into that expert's turns. Returns "" for an
+  // expert with no grounding. Each expert sees only its own scoped sources.
+  sourcesFor?: (expertId: string) => string;
 }
 
 export async function runRoundtable(
@@ -98,7 +100,6 @@ export async function runRoundtable(
   opts: RoundtableOptions = {}
 ): Promise<RoundtableSession> {
   const roundCount = opts.roundCount ?? ROUND_INSTRUCTIONS.length;
-  const sources = opts.sources ?? "";
   const rounds: ExpertResponse[][] = [];
 
   for (let roundIndex = 0; roundIndex < roundCount; roundIndex++) {
@@ -106,6 +107,7 @@ export async function runRoundtable(
     const currentRound: ExpertResponse[] = [];
 
     for (const expert of experts) {
+      const sources = opts.sourcesFor?.(expert.id) ?? "";
       const prompt = buildPrompt(brief, rounds, currentRound, roundIndex, sources);
       const response = await callExpert(client, expert, prompt, roundIndex + 1, cb);
       currentRound.push(response);

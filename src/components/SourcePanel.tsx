@@ -1,28 +1,11 @@
-import { useRef, useState } from "react";
-import { ingestDocument } from "../engine/rag";
+import { useState } from "react";
 import { validateVoyageKey } from "../engine/voyage";
-import type { DocChunk, DocKind, RagDoc } from "../engine/retrieval";
+import { DocUploader } from "./DocUploader";
+import type { DocChunk, RagDoc } from "../engine/retrieval";
 
-const ACCEPT = ".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf";
-
-function kindForFile(file: File): DocKind {
-  const name = file.name.toLowerCase();
-  if (name.endsWith(".pdf") || file.type === "application/pdf") return "pdf";
-  if (name.endsWith(".md") || name.endsWith(".markdown")) return "markdown";
-  return "text";
-}
-
-async function readFileText(file: File): Promise<string> {
-  if (kindForFile(file) === "pdf") {
-    // Lazy-load pdfjs so it (and its worker) stay out of the initial bundle.
-    const { extractPdfText } = await import("../engine/pdf");
-    return extractPdfText(await file.arrayBuffer());
-  }
-  return file.text();
-}
-
-// Optional, collapsible "source material" section on the compose screen. Handles the
-// Voyage key gate and document ingestion; persistence + corpus state live in App.
+// Collapsible "source material" section on the compose screen. Owns the Voyage key gate
+// and the SHARED (problem) corpus; per-expert documents are handled on the panel cards.
+// Persistence + corpus state live in App.
 export function SourcePanel({
   voyageKey,
   docs,
@@ -41,18 +24,11 @@ export function SourcePanel({
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
-
-  // Voyage key entry
   const [keyInput, setKeyInput] = useState("");
   const [keyStatus, setKeyStatus] = useState<"idle" | "checking" | "error">("idle");
   const [keyError, setKeyError] = useState("");
 
-  // Ingestion
-  const [busy, setBusy] = useState<string | null>(null);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [paste, setPaste] = useState("");
-  const [pasteName, setPasteName] = useState("");
-  const fileInput = useRef<HTMLInputElement>(null);
+  const sharedDocs = docs.filter((d) => d.expertId == null);
 
   async function submitKey() {
     const key = keyInput.trim();
@@ -70,43 +46,6 @@ export function SourcePanel({
     }
   }
 
-  async function ingest(name: string, kind: DocKind, text: string) {
-    const result = await ingestDocument(voyageKey!, { name, kind, text });
-    await onDocIngested(result.doc, result.chunks);
-  }
-
-  async function handleFiles(files: FileList) {
-    setErrors([]);
-    for (const file of Array.from(files)) {
-      try {
-        setBusy(`Reading ${file.name}…`);
-        const text = await readFileText(file);
-        setBusy(`Embedding ${file.name}…`);
-        await ingest(file.name, kindForFile(file), text);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setErrors((e) => [...e, `${file.name}: ${msg}`]);
-      }
-    }
-    setBusy(null);
-    if (fileInput.current) fileInput.current.value = "";
-  }
-
-  async function addPaste() {
-    const text = paste.trim();
-    if (!text) return;
-    setErrors([]);
-    try {
-      setBusy("Embedding pasted text…");
-      await ingest(pasteName.trim() || "Pasted text", "pasted", text);
-      setPaste("");
-      setPasteName("");
-    } catch (err) {
-      setErrors((e) => [...e, err instanceof Error ? err.message : String(err)]);
-    }
-    setBusy(null);
-  }
-
   return (
     <div className="rounded-xl border border-neutral-800 bg-neutral-900/40">
       <button
@@ -116,7 +55,9 @@ export function SourcePanel({
         <span className="text-sm text-neutral-300">
           Source material{" "}
           <span className="text-neutral-500">
-            (optional{docs.length ? ` — ${docs.length} doc${docs.length === 1 ? "" : "s"}` : ""})
+            (optional
+            {sharedDocs.length ? ` — ${sharedDocs.length} doc${sharedDocs.length === 1 ? "" : "s"}` : ""}
+            )
           </span>
         </span>
         <span className="text-xs text-neutral-500">{open ? "▲" : "▼"}</span>
@@ -125,9 +66,10 @@ export function SourcePanel({
       {open && (
         <div className="space-y-4 border-t border-neutral-800 p-4">
           <p className="text-xs leading-relaxed text-neutral-500">
-            Add documents to ground the experts in your own material. Text is embedded with
-            Voyage AI (a separate key) and stored only in this browser; retrieval happens
-            locally at debate time.
+            Shared documents that frame the problem — every expert can draw on them. (Each
+            expert can also be given its own private documents on the next screen.) Text is
+            embedded with Voyage AI (a separate key) and stored only in this browser;
+            retrieval happens locally at debate time.
           </p>
 
           {!voyageKey ? (
@@ -172,54 +114,11 @@ export function SourcePanel({
             </div>
           ) : (
             <>
-              {/* Add controls */}
-              <div className="flex flex-wrap items-center gap-3">
-                <input
-                  ref={fileInput}
-                  type="file"
-                  multiple
-                  accept={ACCEPT}
-                  disabled={!!busy}
-                  onChange={(e) => e.target.files && handleFiles(e.target.files)}
-                  className="text-xs text-neutral-400 file:mr-3 file:rounded-lg file:border-0 file:bg-neutral-800 file:px-3 file:py-2 file:text-xs file:text-neutral-200 hover:file:bg-neutral-700"
-                />
-                <span className="text-xs text-neutral-600">.txt, .md, .pdf</span>
-              </div>
+              <DocUploader voyageKey={voyageKey} onIngested={onDocIngested} />
 
-              <div className="space-y-2">
-                <input
-                  value={pasteName}
-                  onChange={(e) => setPasteName(e.target.value)}
-                  placeholder="Name (optional)"
-                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-xs text-white outline-none focus:border-violet-500"
-                />
-                <textarea
-                  value={paste}
-                  onChange={(e) => setPaste(e.target.value)}
-                  rows={3}
-                  placeholder="…or paste text to add as a source"
-                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-white outline-none focus:border-violet-500"
-                />
-                <button
-                  onClick={addPaste}
-                  disabled={!!busy || !paste.trim()}
-                  className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:border-neutral-500 disabled:opacity-40"
-                >
-                  Add pasted text
-                </button>
-              </div>
-
-              {busy && <p className="text-xs text-violet-400">{busy}</p>}
-              {errors.map((e, i) => (
-                <p key={i} className="text-xs text-red-400 break-words">
-                  {e}
-                </p>
-              ))}
-
-              {/* Doc list */}
-              {docs.length > 0 && (
+              {sharedDocs.length > 0 && (
                 <ul className="space-y-1">
-                  {docs.map((doc) => (
+                  {sharedDocs.map((doc) => (
                     <li
                       key={doc.id}
                       className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2"
@@ -243,7 +142,7 @@ export function SourcePanel({
               )}
 
               <div className="flex items-center gap-4 text-xs">
-                {docs.length > 0 && (
+                {sharedDocs.length > 0 && (
                   <button onClick={onClear} className="text-neutral-500 hover:text-red-400">
                     Clear all
                   </button>

@@ -33,10 +33,23 @@ experts.
 - `roundtable.ts` gained `opts.sources`; `RoundtableView` retrieves for the brief and injects.
 - Default embedding model: `VOYAGE_MODEL = "voyage-4"` (one-line change in `engine/voyage.ts`).
 
+**Per-expert RAG corpora — DONE.** Each expert brings its own knowledge base.
+- Facilitator's `propose_panel` now also emits per-expert `informationNeeds` (descriptions of
+  evidence the expert wants, in its voice — never fabricated citations).
+- `RagDoc`/`DocChunk` carry an optional `expertId` (`undefined` = shared "problem" doc; a value
+  = private to that expert). `scopedChunks()` = own ∪ shared. Shared docs persist (IndexedDB);
+  per-expert docs are **session-scoped (in-memory)** since expert ids aren't stable across panels.
+- `runRoundtable` takes `opts.sourcesFor(expertId)`; `RoundtableView` retrieves per expert.
+- `components/DocUploader.tsx` (extracted) is reused by `SourcePanel` (shared) and the
+  per-expert cards in `FacilitatorView`.
+- Plan: `~/.claude/plans/tender-enchanting-meteor.md`.
+
 **Still TODO for Phase 2:**
-- Saved / reusable expert panels.
+- Saved / reusable expert panels — also the natural home for **persisting per-expert corpora**
+  (a saved panel carries its experts + their attached docs as a unit).
 - Transcript export (markdown) — `buildTranscript` in `synthesizer.ts` is a starting point.
-- Possible polish: show *which* sources each round cited; let the Facilitator see the corpus.
+- Possible polish: reranking; per-lens query shaping; clickable `[Source N]` citations in the
+  UI; let the Facilitator see the corpus; agentic/mid-debate document requests.
 
 ## Later
 - Phase 3: optional accounts / sharing / hosted panels.

@@ -10,6 +10,7 @@ export interface IngestInput {
   name: string;
   kind: DocKind;
   text: string;
+  expertId?: string; // omit for a shared "problem" doc; set to scope to one expert
 }
 
 export interface IngestResult {
@@ -42,6 +43,7 @@ export async function ingestDocument(
     index,
     text,
     embedding: embeddings[index],
+    expertId: input.expertId,
   }));
 
   const doc: RagDoc = {
@@ -51,6 +53,7 @@ export async function ingestDocument(
     addedAt,
     charCount: input.text.length,
     chunkCount: chunks.length,
+    expertId: input.expertId,
   };
 
   return { doc, chunks };

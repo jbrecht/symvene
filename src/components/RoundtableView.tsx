@@ -3,7 +3,7 @@ import { makeClient } from "../engine/client";
 import { runRoundtable, ROUND_TITLES } from "../engine/roundtable";
 import { runSynthesis } from "../engine/synthesizer";
 import { retrieve } from "../engine/rag";
-import { formatSources } from "../engine/retrieval";
+import { formatSources, scopedChunks } from "../engine/retrieval";
 import type { DocChunk } from "../engine/retrieval";
 import type { Expert, ExpertResponse } from "../engine/types";
 
@@ -51,22 +51,26 @@ export function RoundtableView({
     try {
       const client = makeClient(apiKey);
 
-      // Retrieve grounding material from the user's corpus, if any.
-      let sources = "";
+      // Retrieve grounding material per expert: each draws from its own private docs plus
+      // the shared corpus. One expert's retrieval failing leaves only that expert ungrounded.
+      const sourcesByExpert: Record<string, string> = {};
       if (hasCorpus) {
         setState((s) => ({ ...s, status: "retrieving" }));
-        try {
-          const retrieved = await retrieve(voyageKey!, brief, chunks);
-          sources = formatSources(retrieved);
-          setState((s) => ({ ...s, status: "running", retrievedCount: retrieved.length }));
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          setState((s) => ({
-            ...s,
-            status: "running",
-            sourcesNote: `Couldn't retrieve source material (${msg}). Running the debate without it.`,
-          }));
+        let total = 0;
+        let note = "";
+        for (const expert of experts) {
+          const scoped = scopedChunks(chunks, expert.id);
+          if (scoped.length === 0) continue;
+          try {
+            const retrieved = await retrieve(voyageKey!, brief, scoped);
+            sourcesByExpert[expert.id] = formatSources(retrieved);
+            total += retrieved.length;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            note = `Some source retrieval failed (${msg}). Affected experts run without it.`;
+          }
         }
+        setState((s) => ({ ...s, status: "running", retrievedCount: total, sourcesNote: note }));
       }
 
       const session = await runRoundtable(
@@ -99,7 +103,7 @@ export function RoundtableView({
             });
           },
         },
-        { sources }
+        { sourcesFor: (id) => sourcesByExpert[id] ?? "" }
       );
 
       setState((s) => ({ ...s, status: "synthesizing" }));
@@ -141,7 +145,7 @@ export function RoundtableView({
       )}
       {state.retrievedCount > 0 && (
         <p className="text-xs text-emerald-400">
-          Grounded in {state.retrievedCount} source passage
+          Grounded the panel in {state.retrievedCount} source passage
           {state.retrievedCount === 1 ? "" : "s"}.
         </p>
       )}

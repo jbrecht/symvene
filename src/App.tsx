@@ -56,21 +56,30 @@ function App() {
   }
 
   async function handleDocIngested(doc: RagDoc, newChunks: DocChunk[]) {
-    await addDocument(doc, newChunks);
+    // Shared ("problem") docs persist in IndexedDB; per-expert docs are session-scoped
+    // (their expert ids aren't stable across panels), so they live in memory only.
+    if (doc.expertId == null) await addDocument(doc, newChunks);
     setDocs((d) => [...d, doc]);
     setChunks((c) => [...c, ...newChunks]);
   }
 
   async function handleRemoveDoc(docId: string) {
-    await deleteDocument(docId);
+    await deleteDocument(docId); // no-op for in-memory expert docs not in IndexedDB
     setDocs((d) => d.filter((doc) => doc.id !== docId));
     setChunks((c) => c.filter((chunk) => chunk.docId !== docId));
   }
 
+  // Clear shared docs only (IndexedDB + memory), leaving any per-expert docs in place.
   async function handleClearCorpus() {
     await clearCorpus();
-    setDocs([]);
-    setChunks([]);
+    setDocs((d) => d.filter((doc) => doc.expertId != null));
+    setChunks((c) => c.filter((chunk) => chunk.expertId != null));
+  }
+
+  // Drop all per-expert (session-scoped) docs — called when a new panel is proposed.
+  function clearExpertScopedCorpus() {
+    setDocs((d) => d.filter((doc) => doc.expertId == null));
+    setChunks((c) => c.filter((chunk) => chunk.expertId == null));
   }
 
   return (
@@ -169,10 +178,15 @@ function App() {
               apiKey={apiKey}
               brief={stage.brief}
               expertCount={stage.expertCount}
+              voyageKey={voyageKey}
+              expertDocs={docs.filter((d) => d.expertId != null)}
               onPanelReady={(experts) =>
                 setStage({ name: "roundtable", brief: stage.brief, experts })
               }
               onBack={() => setStage({ name: "compose" })}
+              onExpertDocIngested={handleDocIngested}
+              onRemoveDoc={handleRemoveDoc}
+              onResetExpertDocs={clearExpertScopedCorpus}
             />
           )}
 
