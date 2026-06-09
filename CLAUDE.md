@@ -81,6 +81,8 @@ docs are session-scoped (in-memory only)** because expert ids aren't stable acro
   `formatSources()` (renders chunks into the prompt block).
 - **`rag.ts`** — orchestration: `ingestDocument()` (chunk → embed → assemble, scoped by
   optional `expertId`) and `retrieve()` (embed query → search). `DEFAULT_TOP_K`.
+- **`transcript.ts`** — `toMarkdown()` / `transcriptFilename()`: render a finished debate as a
+  Markdown document (pure; the component does the file/clipboard side).
 
 ### UI (`src/`)
 

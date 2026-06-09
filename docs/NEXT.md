@@ -44,10 +44,13 @@ experts.
   per-expert cards in `FacilitatorView`.
 - Plan: `~/.claude/plans/tender-enchanting-meteor.md`.
 
+**Transcript export — DONE.** `engine/transcript.ts` (`toMarkdown()` + `transcriptFilename()`,
+pure) renders a finished debate (brief, grounding note, panel, rounds, synthesis) as Markdown;
+`RoundtableView` shows Download .md / Copy buttons when the run is done.
+
 **Still TODO for Phase 2:**
 - Saved / reusable expert panels — also the natural home for **persisting per-expert corpora**
   (a saved panel carries its experts + their attached docs as a unit).
-- Transcript export (markdown) — `buildTranscript` in `synthesizer.ts` is a starting point.
 - Possible polish: reranking; per-lens query shaping; clickable `[Source N]` citations in the
   UI; let the Facilitator see the corpus; agentic/mid-debate document requests.
 

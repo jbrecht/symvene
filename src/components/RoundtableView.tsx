@@ -4,6 +4,7 @@ import { runRoundtable, ROUND_TITLES } from "../engine/roundtable";
 import { runSynthesis } from "../engine/synthesizer";
 import { retrieve } from "../engine/rag";
 import { formatSources, scopedChunks } from "../engine/retrieval";
+import { toMarkdown, transcriptFilename } from "../engine/transcript";
 import type { DocChunk } from "../engine/retrieval";
 import type { Expert, ExpertResponse } from "../engine/types";
 
@@ -41,9 +42,46 @@ export function RoundtableView({
   chunks: DocChunk[];
 }) {
   const [state, setState] = useState<RunState>(INITIAL);
+  const [copied, setCopied] = useState(false);
   const started = useRef(false);
 
   const hasCorpus = !!voyageKey && chunks.length > 0;
+
+  function transcriptMarkdown() {
+    const grounding =
+      state.passageCount > 0
+        ? `Grounded in ${state.passageCount} passage${state.passageCount === 1 ? "" : "s"} from ${state.sourceDocCount} document${state.sourceDocCount === 1 ? "" : "s"}.`
+        : undefined;
+    return toMarkdown({
+      brief,
+      experts,
+      rounds: state.rounds,
+      synthesis: state.synthesis,
+      grounding,
+    });
+  }
+
+  function downloadTranscript() {
+    const blob = new Blob([transcriptMarkdown()], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = transcriptFilename(brief);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function copyTranscript() {
+    try {
+      await navigator.clipboard.writeText(transcriptMarkdown());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard may be unavailable (e.g. insecure context) — ignore
+    }
+  }
 
   async function run() {
     if (started.current) return;
@@ -207,7 +245,23 @@ export function RoundtableView({
         </p>
       )}
 
-      {state.status === "done" && <p className="text-xs text-neutral-500">Done.</p>}
+      {state.status === "done" && (
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-neutral-500">Done.</span>
+          <button
+            onClick={downloadTranscript}
+            className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:border-neutral-500"
+          >
+            Download .md
+          </button>
+          <button
+            onClick={copyTranscript}
+            className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:border-neutral-500"
+          >
+            {copied ? "Copied ✓" : "Copy"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
