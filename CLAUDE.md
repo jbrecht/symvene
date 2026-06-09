@@ -103,6 +103,9 @@ docs are session-scoped (in-memory only)** because expert ids aren't stable acro
 - **`components/DocUploader.tsx`** — reusable file(.txt/.md/.pdf, lazy pdfjs) + paste
   ingestion, parameterised by an optional `expertId` scope; hands `(doc, chunks)` to its
   caller. Used by both `SourcePanel` (shared) and `FacilitatorView` (per-expert).
+- **`components/Markdown.tsx`** — renders model output (expert turns + synthesis) as Markdown
+  via `react-markdown`/`remark-gfm`, styled with the Tailwind typography plugin. The model
+  emits Markdown, so display goes through this rather than raw `whitespace-pre-wrap`.
 - **`components/SourcePanel.tsx`** — collapsible "source material" section on the compose
   screen: Voyage key gate, a shared-scope `DocUploader`, and the **shared** doc list.
 - **`lib/storage.ts`** — `localStorage` keys (try/catch for private mode): the Anthropic key
@@ -129,6 +132,8 @@ the corpus + Voyage key; the engine never touches storage.
   and consume the `"text"` event for incremental UI.
 - **RAG deps:** `pdfjs-dist` (PDF text, lazy-loaded) and `idb` (IndexedDB wrapper). Voyage
   embeddings are called over raw `fetch` (no SDK).
+- **Markdown rendering:** `react-markdown` + `remark-gfm`, with `@tailwindcss/typography`
+  (registered via `@plugin` in `index.css`) supplying the `prose` styles.
 
 ## Roadmap context
 

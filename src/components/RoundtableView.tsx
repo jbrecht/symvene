@@ -5,6 +5,7 @@ import { runSynthesis } from "../engine/synthesizer";
 import { retrieve } from "../engine/rag";
 import { formatSources, scopedChunks } from "../engine/retrieval";
 import { toMarkdown, transcriptFilename } from "../engine/transcript";
+import { Markdown } from "./Markdown";
 import type { DocChunk } from "../engine/retrieval";
 import type { Expert, ExpertResponse } from "../engine/types";
 
@@ -219,8 +220,12 @@ export function RoundtableView({
                 className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4"
               >
                 <div className="text-sm font-semibold text-white">{turn.displayName}</div>
-                <div className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-neutral-300">
-                  {turn.content || <span className="text-neutral-600">…</span>}
+                <div className="mt-2 text-sm text-neutral-300">
+                  {turn.content ? (
+                    <Markdown>{turn.content}</Markdown>
+                  ) : (
+                    <span className="text-neutral-600">…</span>
+                  )}
                 </div>
               </article>
             ))}
@@ -233,8 +238,12 @@ export function RoundtableView({
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-emerald-400">
             Synthesis
           </h2>
-          <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-4 whitespace-pre-wrap text-sm leading-relaxed text-neutral-200">
-            {state.synthesis || <span className="text-neutral-600">…</span>}
+          <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-4 text-sm text-neutral-200">
+            {state.synthesis ? (
+              <Markdown>{state.synthesis}</Markdown>
+            ) : (
+              <span className="text-neutral-600">…</span>
+            )}
           </div>
         </section>
       )}
