@@ -87,15 +87,21 @@ docs are session-scoped (in-memory only)** because expert ids aren't stable acro
 ### UI (`src/`)
 
 - **`App.tsx`** — top-level screen flow as a `Stage` union: no key → `KeyEntry`; key present
-  → `compose` (brief + expert-count selector) → `facilitate` (`FacilitatorView`) →
-  `roundtable` (`RoundtableView`).
+  → `compose` (brief + expert-count selector + saved-panels list) → `facilitate`
+  (`FacilitatorView`) → `roundtable` (`RoundtableView`). Loading a saved panel jumps to the
+  `review` stage (renders `<PanelReview>` directly) → `roundtable`. `App` owns the corpus,
+  Voyage key, and saved panels, and handles save/use/delete.
 - **`components/KeyEntry.tsx`** — key paste + live validation gate.
 - **`components/FacilitatorView.tsx`** — drives the intake conversation (holds the
   `Anthropic.MessageParam[]` history in a ref, streams facilitator questions, collects user
-  answers) and then renders the proposed panel as **editable cards**. Each card shows the
-  expert's `informationNeeds` and a per-expert `DocUploader` (its private corpus). On a new
-  panel it calls `onResetExpertDocs` to drop the prior panel's per-expert docs. "Start
-  roundtable" hands the final `Expert[]` to `App`.
+  answers). On a panel it calls `onResetExpertDocs` (drop prior per-expert docs) and renders
+  `<PanelReview>` for the editable cards.
+- **`components/PanelReview.tsx`** — the editable panel screen (presentational/controlled):
+  per-expert displayName/persona edit, `informationNeeds`, a per-expert `DocUploader` + doc
+  list, add/remove, `canStart` validation, and **Save panel**. Reused by both the Facilitator
+  path (with `onRegenerate`) and the saved-panel load path (the `review` stage).
+- **`components/SavedPanelsList.tsx`** — compact list of saved panels on the compose screen
+  (Use / Delete; Use disabled until a brief is typed).
 - **`components/RoundtableView.tsx`** — drives a run: **per-expert** retrieval (each expert
   retrieves from `scopedChunks` for the brief), then calls `runRoundtable` (with `sourcesFor`)
   and `runSynthesis`, translating streaming callbacks into React state. Per-expert retrieval
@@ -113,6 +119,9 @@ docs are session-scoped (in-memory only)** because expert ids aren't stable acro
 - **`lib/ragStore.ts`** — IndexedDB persistence (`symvene-rag` DB, `docs` + `chunks` stores)
   so the corpus + its `Float32Array` embeddings survive reloads. `App` loads it on mount and
   holds the corpus in memory; the engine never touches storage.
+- **`lib/panelStore.ts`** — IndexedDB persistence (separate `symvene-panels` DB) for saved
+  panels. A `SavedPanel` is a frozen unit — `experts` + their per-expert `docs`/`chunks` — so
+  its expert ids are stable, which is what makes per-expert corpus persistence safe here.
 
 ### Data flow
 
