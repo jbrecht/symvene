@@ -48,9 +48,18 @@ experts.
 pure) renders a finished debate (brief, grounding note, panel, rounds, synthesis) as Markdown;
 `RoundtableView` shows Download .md / Copy buttons when the run is done.
 
+**Saved / reusable panels — DONE.** A panel (experts + their per-expert docs) is saved as a
+frozen unit and reused across questions.
+- `lib/panelStore.ts` (separate `symvene-panels` IndexedDB DB): `SavedPanel` =
+  `{ id, name, createdAt, experts, docs, chunks }`; `loadPanels`/`savePanel`/`deletePanel`.
+- `components/PanelReview.tsx` extracted from `FacilitatorView` (editable cards + Save panel),
+  reused by the Facilitator path and the new `review` stage.
+- `components/SavedPanelsList.tsx` on the compose screen (Use/Delete). App: `panels` state,
+  `handleSavePanel`/`handleUsePanel`/`handleDeletePanel`, and the `review` stage.
+- This is where **per-expert corpus persistence** landed (a saved panel's frozen expert ids
+  make it safe).
+
 **Still TODO for Phase 2:**
-- Saved / reusable expert panels — also the natural home for **persisting per-expert corpora**
-  (a saved panel carries its experts + their attached docs as a unit).
 - Possible polish: reranking; per-lens query shaping; clickable `[Source N]` citations in the
   UI; let the Facilitator see the corpus; agentic/mid-debate document requests.
 

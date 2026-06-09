@@ -3,15 +3,19 @@ import { KeyEntry } from "./components/KeyEntry";
 import { FacilitatorView } from "./components/FacilitatorView";
 import { RoundtableView } from "./components/RoundtableView";
 import { SourcePanel } from "./components/SourcePanel";
+import { PanelReview } from "./components/PanelReview";
+import { SavedPanelsList } from "./components/SavedPanelsList";
 import { MIN_EXPERTS, MAX_EXPERTS, DEFAULT_EXPERTS } from "./engine/facilitator";
 import type { Expert } from "./engine/types";
 import type { DocChunk, RagDoc } from "./engine/retrieval";
 import { loadKey, clearKey, loadVoyageKey, saveVoyageKey, clearVoyageKey } from "./lib/storage";
 import { loadCorpus, addDocument, deleteDocument, clearCorpus } from "./lib/ragStore";
+import { loadPanels, savePanel, deletePanel, type SavedPanel } from "./lib/panelStore";
 
 type Stage =
   | { name: "compose" }
   | { name: "facilitate"; brief: string; expertCount: number | null }
+  | { name: "review"; brief: string; experts: Expert[] }
   | { name: "roundtable"; brief: string; experts: Expert[] };
 
 const COUNT_OPTIONS = Array.from(
@@ -30,6 +34,9 @@ function App() {
   const [docs, setDocs] = useState<RagDoc[]>([]);
   const [chunks, setChunks] = useState<DocChunk[]>([]);
 
+  // Saved panels (experts + their per-expert docs), persisted in IndexedDB.
+  const [panels, setPanels] = useState<SavedPanel[]>([]);
+
   useEffect(() => {
     let cancelled = false;
     loadCorpus().then(({ docs, chunks }) => {
@@ -37,6 +44,9 @@ function App() {
         setDocs(docs);
         setChunks(chunks);
       }
+    });
+    loadPanels().then((p) => {
+      if (!cancelled) setPanels(p);
     });
     return () => {
       cancelled = true;
@@ -57,7 +67,8 @@ function App() {
 
   async function handleDocIngested(doc: RagDoc, newChunks: DocChunk[]) {
     // Shared ("problem") docs persist in IndexedDB; per-expert docs are session-scoped
-    // (their expert ids aren't stable across panels), so they live in memory only.
+    // (their expert ids aren't stable across panels), so they live in memory only —
+    // they get persisted when their panel is saved.
     if (doc.expertId == null) await addDocument(doc, newChunks);
     setDocs((d) => [...d, doc]);
     setChunks((c) => [...c, ...newChunks]);
@@ -80,6 +91,34 @@ function App() {
   function clearExpertScopedCorpus() {
     setDocs((d) => d.filter((doc) => doc.expertId == null));
     setChunks((c) => c.filter((chunk) => chunk.expertId == null));
+  }
+
+  // Save a panel as a reusable unit: its experts plus the per-expert docs/chunks they own.
+  async function handleSavePanel(name: string, panelExperts: Expert[]) {
+    const ids = new Set(panelExperts.map((e) => e.id));
+    const panel: SavedPanel = {
+      id: crypto.randomUUID(),
+      name,
+      createdAt: Date.now(),
+      experts: panelExperts,
+      docs: docs.filter((d) => d.expertId != null && ids.has(d.expertId)),
+      chunks: chunks.filter((c) => c.expertId != null && ids.has(c.expertId)),
+    };
+    await savePanel(panel);
+    setPanels((p) => [panel, ...p]);
+  }
+
+  // Load a saved panel into the review screen: restore its per-expert docs (replacing any
+  // current ones), keep shared docs, and carry the typed brief forward.
+  function handleUsePanel(panel: SavedPanel) {
+    setDocs((d) => [...d.filter((x) => x.expertId == null), ...panel.docs]);
+    setChunks((c) => [...c.filter((x) => x.expertId == null), ...panel.chunks]);
+    setStage({ name: "review", brief: brief.trim(), experts: panel.experts });
+  }
+
+  async function handleDeletePanel(id: string) {
+    await deletePanel(id);
+    setPanels((p) => p.filter((x) => x.id !== id));
   }
 
   return (
@@ -151,6 +190,13 @@ function App() {
               Convene the panel
             </button>
           </div>
+
+          <SavedPanelsList
+            panels={panels}
+            canUse={!!brief.trim()}
+            onUse={handleUsePanel}
+            onDelete={handleDeletePanel}
+          />
         </div>
       )}
 
@@ -187,7 +233,33 @@ function App() {
               onExpertDocIngested={handleDocIngested}
               onRemoveDoc={handleRemoveDoc}
               onResetExpertDocs={clearExpertScopedCorpus}
+              onSavePanel={handleSavePanel}
             />
+          )}
+
+          {stage.name === "review" && (
+            <>
+              <PanelReview
+                experts={stage.experts}
+                onExpertsChange={(experts) =>
+                  setStage({ name: "review", brief: stage.brief, experts })
+                }
+                voyageKey={voyageKey}
+                expertDocs={docs.filter((d) => d.expertId != null)}
+                onExpertDocIngested={handleDocIngested}
+                onRemoveDoc={handleRemoveDoc}
+                onStart={() =>
+                  setStage({ name: "roundtable", brief: stage.brief, experts: stage.experts })
+                }
+                onSavePanel={(name) => handleSavePanel(name, stage.experts)}
+              />
+              <button
+                onClick={() => setStage({ name: "compose" })}
+                className="text-xs text-neutral-500 hover:text-neutral-300"
+              >
+                ← new brief
+              </button>
+            </>
           )}
 
           {stage.name === "roundtable" && (
