@@ -12,7 +12,8 @@ type RunState = {
   synthesis: string;
   status: "idle" | "retrieving" | "running" | "synthesizing" | "done" | "error";
   error: string;
-  retrievedCount: number;
+  passageCount: number; // distinct passages used across the panel (deduped)
+  sourceDocCount: number; // distinct documents those passages came from
   sourcesNote: string; // non-fatal warning if retrieval failed
 };
 
@@ -21,7 +22,8 @@ const INITIAL: RunState = {
   synthesis: "",
   status: "idle",
   error: "",
-  retrievedCount: 0,
+  passageCount: 0,
+  sourceDocCount: 0,
   sourcesNote: "",
 };
 
@@ -56,7 +58,9 @@ export function RoundtableView({
       const sourcesByExpert: Record<string, string> = {};
       if (hasCorpus) {
         setState((s) => ({ ...s, status: "retrieving" }));
-        let total = 0;
+        // Dedupe across experts: a shared passage retrieved by several experts counts once.
+        const usedPassages = new Set<string>();
+        const usedDocs = new Set<string>();
         let note = "";
         for (const expert of experts) {
           const scoped = scopedChunks(chunks, expert.id);
@@ -64,13 +68,22 @@ export function RoundtableView({
           try {
             const retrieved = await retrieve(voyageKey!, brief, scoped);
             sourcesByExpert[expert.id] = formatSources(retrieved);
-            total += retrieved.length;
+            for (const r of retrieved) {
+              usedPassages.add(r.chunk.id);
+              usedDocs.add(r.chunk.docId);
+            }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             note = `Some source retrieval failed (${msg}). Affected experts run without it.`;
           }
         }
-        setState((s) => ({ ...s, status: "running", retrievedCount: total, sourcesNote: note }));
+        setState((s) => ({
+          ...s,
+          status: "running",
+          passageCount: usedPassages.size,
+          sourceDocCount: usedDocs.size,
+          sourcesNote: note,
+        }));
       }
 
       const session = await runRoundtable(
@@ -143,10 +156,11 @@ export function RoundtableView({
       {state.status === "retrieving" && (
         <p className="text-xs text-violet-400">Retrieving source material…</p>
       )}
-      {state.retrievedCount > 0 && (
+      {state.passageCount > 0 && (
         <p className="text-xs text-emerald-400">
-          Grounded the panel in {state.retrievedCount} source passage
-          {state.retrievedCount === 1 ? "" : "s"}.
+          Grounded the panel in {state.passageCount} passage
+          {state.passageCount === 1 ? "" : "s"} from {state.sourceDocCount} document
+          {state.sourceDocCount === 1 ? "" : "s"}.
         </p>
       )}
       {state.sourcesNote && (
