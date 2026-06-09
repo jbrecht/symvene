@@ -5,7 +5,7 @@ import type { Expert, ExpertResponse, RoundtableSession } from "./types";
 const ROUND_INSTRUCTIONS = [
   "You are sharing your initial perspective on the brief. You may acknowledge what colleagues said before you, but focus on your own view. Be substantive and specific rather than vaguely agreeable.",
   "You have now heard from the other experts. Respond directly to them — agree where you genuinely agree, push back hard where you don't, and sharpen your position. Be specific about where you differ and why.",
-  "This is the final round. Stop debating and commit to concrete, actionable recommendations for the person who posed the brief. Be specific enough to act on. Then name the single biggest remaining risk or open question in one sentence, and stop.",
+  "This is the final round. Stop debating and commit to your OWN concrete, actionable recommendations for the person who posed the brief — your recommendations alone, not a write-up of the whole panel's. Be specific enough to act on. Then name the single biggest remaining risk or open question in one sentence, and stop.",
 ] as const;
 
 export const ROUND_TITLES = [
@@ -26,7 +26,8 @@ function buildPrompt(
   completedRounds: ExpertResponse[][],
   currentRound: ExpertResponse[],
   roundIndex: number,
-  sources: string
+  sources: string,
+  displayName: string
 ): string {
   let prompt = `BRIEF:\n${brief}\n\n`;
 
@@ -49,6 +50,12 @@ function buildPrompt(
   }
 
   prompt += ROUND_INSTRUCTIONS[roundIndex] ?? ROUND_INSTRUCTIONS[ROUND_INSTRUCTIONS.length - 1];
+
+  // The transcript above is a script of "Name:\ncontent" turns, which tempts the model to
+  // keep writing and speak for the other experts too (especially in the recommendations
+  // round). Pin it to a single first-person turn as this expert only.
+  prompt += `\n\nRespond now as ${displayName}, and only as ${displayName}. Write a single first-person turn that is your own contribution. Do NOT write, summarise, or label any other expert's response — no "NAME:" headings for other people; they speak for themselves. Don't restate your own name as a heading either.`;
+
   return prompt;
 }
 
@@ -108,7 +115,14 @@ export async function runRoundtable(
 
     for (const expert of experts) {
       const sources = opts.sourcesFor?.(expert.id) ?? "";
-      const prompt = buildPrompt(brief, rounds, currentRound, roundIndex, sources);
+      const prompt = buildPrompt(
+        brief,
+        rounds,
+        currentRound,
+        roundIndex,
+        sources,
+        expert.displayName
+      );
       const response = await callExpert(client, expert, prompt, roundIndex + 1, cb);
       currentRound.push(response);
     }
