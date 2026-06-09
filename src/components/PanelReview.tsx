@@ -17,6 +17,7 @@ export function PanelReview({
   onStart,
   onRegenerate,
   onSavePanel,
+  initiallySaved = false,
 }: {
   experts: Expert[];
   onExpertsChange: (experts: Expert[]) => void;
@@ -27,10 +28,12 @@ export function PanelReview({
   onStart: () => void;
   onRegenerate?: () => void;
   onSavePanel?: (name: string) => void;
+  initiallySaved?: boolean; // true when the panel was loaded from the store (already saved)
 }) {
   const [panelName, setPanelName] = useState("");
   const [saved, setSaved] = useState(false);
-  const [hasSaved, setHasSaved] = useState(false); // sticky: saved this panel at least once?
+  // Sticky: have we saved this panel at least once? A panel loaded from the store counts.
+  const [hasSaved, setHasSaved] = useState(initiallySaved);
   const [confirmingStart, setConfirmingStart] = useState(false); // "save before running?" nag
 
   function updateExpert(index: number, patch: Partial<Expert>) {

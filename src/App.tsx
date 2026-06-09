@@ -252,6 +252,7 @@ function App() {
                   setStage({ name: "roundtable", brief: stage.brief, experts: stage.experts })
                 }
                 onSavePanel={(name) => handleSavePanel(name, stage.experts)}
+                initiallySaved
               />
               <button
                 onClick={() => setStage({ name: "compose" })}
