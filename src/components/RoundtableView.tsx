@@ -4,9 +4,10 @@ import { runRoundtable, ROUND_TITLES } from "../engine/roundtable";
 import { runSynthesis } from "../engine/synthesizer";
 import { retrieve } from "../engine/rag";
 import { formatSources, scopedChunks } from "../engine/retrieval";
-import { toMarkdown, transcriptFilename } from "../engine/transcript";
+import { toMarkdown, transcriptFilename, type ExportVisual } from "../engine/transcript";
 import { generateVisualizations } from "../engine/visualize";
 import type { Visualization } from "../engine/visualize";
+import { vegaSpecToPng } from "../lib/vegaImage";
 import { Markdown } from "./Markdown";
 import { Visuals } from "./Visuals";
 import type { DocChunk } from "../engine/retrieval";
@@ -56,7 +57,7 @@ export function RoundtableView({
 
   const hasCorpus = !!voyageKey && chunks.length > 0;
 
-  function transcriptMarkdown() {
+  function transcriptMarkdown(visuals: ExportVisual[] = viz.items) {
     const grounding =
       state.passageCount > 0
         ? `Grounded in ${state.passageCount} passage${state.passageCount === 1 ? "" : "s"} from ${state.sourceDocCount} document${state.sourceDocCount === 1 ? "" : "s"}.`
@@ -67,7 +68,7 @@ export function RoundtableView({
       rounds: state.rounds,
       synthesis: state.synthesis,
       grounding,
-      visuals: viz.items,
+      visuals,
     });
   }
 
@@ -90,8 +91,19 @@ export function RoundtableView({
     }
   }
 
-  function downloadTranscript() {
-    const blob = new Blob([transcriptMarkdown()], { type: "text/markdown;charset=utf-8" });
+  async function downloadTranscript() {
+    // Rasterise Vega-Lite charts to embedded PNGs so the .md renders anywhere (Mermaid
+    // renders natively in GitHub/VS Code, so it stays a code block).
+    const visuals: ExportVisual[] = [];
+    for (const v of viz.items) {
+      if (v.type === "vega_lite") {
+        const image = await vegaSpecToPng(v.spec);
+        visuals.push(image ? { ...v, image } : v);
+      } else {
+        visuals.push(v);
+      }
+    }
+    const blob = new Blob([transcriptMarkdown(visuals)], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;

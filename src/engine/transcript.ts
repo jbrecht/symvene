@@ -4,13 +4,17 @@ import type { Expert, ExpertResponse } from "./types";
 import type { Visualization } from "./visualize";
 import { ROUND_TITLES } from "./roundtable";
 
+// A visual for export. `image` (a PNG data URL) is set for Vega-Lite charts so they render in
+// static Markdown viewers; without it we fall back to embedding the raw spec.
+export type ExportVisual = Visualization & { image?: string };
+
 export interface TranscriptInput {
   brief: string;
   experts: Expert[];
   rounds: ExpertResponse[][];
   synthesis: string;
   grounding?: string; // optional one-line note, e.g. "Grounded in 11 passages from 7 documents."
-  visuals?: Visualization[]; // optional generated visuals, embedded as code blocks
+  visuals?: ExportVisual[];
 }
 
 export function toMarkdown({
@@ -45,8 +49,13 @@ export function toMarkdown({
     lines.push("## Visuals", "");
     for (const v of visuals) {
       if (v.title) lines.push(`### ${v.title}`, "");
-      // Mermaid renders in many Markdown viewers; Vega-Lite is preserved as a JSON block.
-      lines.push("```" + (v.type === "mermaid" ? "mermaid" : "json"), v.spec.trim(), "```", "");
+      if (v.type === "vega_lite" && v.image) {
+        // Static image so the chart renders anywhere (Vega-Lite has no native MD renderer).
+        lines.push(`![${v.title || v.caption || "chart"}](${v.image})`, "");
+      } else {
+        // Mermaid renders natively in GitHub/VS Code; Vega-Lite without an image falls back to its spec.
+        lines.push("```" + (v.type === "mermaid" ? "mermaid" : "json"), v.spec.trim(), "```", "");
+      }
       if (v.caption) lines.push(`_${v.caption}_`, "");
     }
   }
