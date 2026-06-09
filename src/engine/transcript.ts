@@ -1,6 +1,7 @@
 // Render a completed debate as a Markdown document for download/copy. Pure and
 // framework-agnostic: the React layer handles the actual file/clipboard side.
 import type { Expert, ExpertResponse } from "./types";
+import type { Visualization } from "./visualize";
 import { ROUND_TITLES } from "./roundtable";
 
 export interface TranscriptInput {
@@ -9,6 +10,7 @@ export interface TranscriptInput {
   rounds: ExpertResponse[][];
   synthesis: string;
   grounding?: string; // optional one-line note, e.g. "Grounded in 11 passages from 7 documents."
+  visuals?: Visualization[]; // optional generated visuals, embedded as code blocks
 }
 
 export function toMarkdown({
@@ -17,6 +19,7 @@ export function toMarkdown({
   rounds,
   synthesis,
   grounding,
+  visuals,
 }: TranscriptInput): string {
   const lines: string[] = ["# symvene debate", ""];
 
@@ -37,6 +40,16 @@ export function toMarkdown({
   });
 
   if (synthesis.trim()) lines.push("## Synthesis", "", synthesis.trim(), "");
+
+  if (visuals && visuals.length > 0) {
+    lines.push("## Visuals", "");
+    for (const v of visuals) {
+      if (v.title) lines.push(`### ${v.title}`, "");
+      // Mermaid renders in many Markdown viewers; Vega-Lite is preserved as a JSON block.
+      lines.push("```" + (v.type === "mermaid" ? "mermaid" : "json"), v.spec.trim(), "```", "");
+      if (v.caption) lines.push(`_${v.caption}_`, "");
+    }
+  }
 
   lines.push("---", "", "_Generated with symvene_");
   return lines.join("\n");
