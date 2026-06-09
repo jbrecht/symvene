@@ -3,6 +3,8 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { makeClient } from "../engine/client";
 import { facilitatorTurn, MIN_EXPERTS, MAX_EXPERTS } from "../engine/facilitator";
 import { MODELS, type Expert } from "../engine/types";
+import { DocUploader } from "./DocUploader";
+import type { DocChunk, RagDoc } from "../engine/retrieval";
 
 type LogEntry = { speaker: "facilitator" | "you"; text: string };
 
@@ -16,14 +18,24 @@ export function FacilitatorView({
   apiKey,
   brief,
   expertCount,
+  voyageKey,
+  expertDocs,
   onPanelReady,
   onBack,
+  onExpertDocIngested,
+  onRemoveDoc,
+  onResetExpertDocs,
 }: {
   apiKey: string;
   brief: string;
   expertCount: number | null;
+  voyageKey: string | null;
+  expertDocs: RagDoc[]; // all expert-scoped docs in the corpus (filtered per card by id)
   onPanelReady: (experts: Expert[]) => void;
   onBack: () => void;
+  onExpertDocIngested: (doc: RagDoc, chunks: DocChunk[]) => Promise<void>;
+  onRemoveDoc: (docId: string) => void;
+  onResetExpertDocs: () => void;
 }) {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [streaming, setStreaming] = useState("");
@@ -52,6 +64,12 @@ export function FacilitatorView({
       messages.current.push(result.assistant);
 
       if (result.type === "panel") {
+        // The panel came back as a tool_use; append its tool_result so the history stays
+        // valid for later turns (e.g. "Regenerate panel").
+        messages.current.push(result.toolResult);
+        // A fresh panel means new expert ids — drop any docs attached to a prior panel
+        // so stale (or id-colliding) experts can't inherit them.
+        onResetExpertDocs();
         setStreaming("");
         setExperts(result.experts);
         setStatus("review");
@@ -225,6 +243,66 @@ export function FacilitatorView({
                 placeholder="This expert's persona / system prompt…"
                 className="w-full rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs leading-relaxed text-neutral-300 outline-none focus:border-violet-500"
               />
+
+              {/* What this expert wants grounded in its own corpus */}
+              {expert.informationNeeds && expert.informationNeeds.length > 0 && (
+                <div className="rounded-lg border border-neutral-800/80 bg-neutral-950/40 p-3">
+                  <div className="text-xs font-medium text-neutral-400">
+                    Wants documents on:
+                  </div>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-neutral-400">
+                    {expert.informationNeeds.map((need, n) => (
+                      <li key={n}>{need}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Per-expert private corpus */}
+              {voyageKey ? (
+                <div className="space-y-2 rounded-lg border border-neutral-800/80 p-3">
+                  <div className="text-xs font-medium text-neutral-400">
+                    {expert.displayName.trim() || "This expert"}'s documents
+                    <span className="text-neutral-600"> (private to this expert)</span>
+                  </div>
+                  <DocUploader
+                    voyageKey={voyageKey}
+                    expertId={expert.id}
+                    onIngested={onExpertDocIngested}
+                  />
+                  {expertDocs.filter((d) => d.expertId === expert.id).length > 0 && (
+                    <ul className="space-y-1">
+                      {expertDocs
+                        .filter((d) => d.expertId === expert.id)
+                        .map((doc) => (
+                          <li
+                            key={doc.id}
+                            className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-1.5"
+                          >
+                            <span className="min-w-0 flex-1 truncate text-xs text-neutral-300">
+                              <span className="uppercase text-neutral-600">{doc.kind}</span>{" "}
+                              {doc.name}{" "}
+                              <span className="text-neutral-600">
+                                · {doc.chunkCount} chunk{doc.chunkCount === 1 ? "" : "s"}
+                              </span>
+                            </span>
+                            <button
+                              onClick={() => onRemoveDoc(doc.id)}
+                              className="ml-2 text-xs text-neutral-500 hover:text-red-400"
+                            >
+                              remove
+                            </button>
+                          </li>
+                        ))}
+                    </ul>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-neutral-600">
+                  Add a Voyage key under “Source material” on the previous screen to give this
+                  expert its own documents.
+                </p>
+              )}
             </article>
           ))}
 

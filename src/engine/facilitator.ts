@@ -16,6 +16,7 @@ interface ProposedExpert {
   id: string;
   displayName: string;
   systemPrompt: string;
+  informationNeeds?: string[];
 }
 
 const PROPOSE_PANEL_TOOL: Anthropic.Tool = {
@@ -46,8 +47,14 @@ const PROPOSE_PANEL_TOOL: Anthropic.Tool = {
               description:
                 "The full persona definition this expert will run on: their role, their lens, their voice, and instructions to stay in character, speak in the first person, be specific, and disagree where they genuinely would. Roughly 150-250 words.",
             },
+            informationNeeds: {
+              type: "array",
+              description:
+                "1-4 short DESCRIPTIONS of the kind of evidence this expert wants in order to argue its position well — phrased in the expert's own voice (e.g. 'internal cost data or vendor quotes for the build-vs-buy call', 'any prior post-mortems on similar launches'). Describe the KIND of source, never invent specific titles, authors, or citations. The user may not have all of these — that's fine.",
+              items: { type: "string" },
+            },
           },
-          required: ["id", "displayName", "systemPrompt"],
+          required: ["id", "displayName", "systemPrompt", "informationNeeds"],
         },
       },
     },
@@ -77,6 +84,8 @@ What makes a good panel:
 
 Each expert's systemPrompt is the actual prompt that expert will run on during the debate. Write it in the second person ("You are..."), define their role, their lens, and their style, and instruct them to: stay fully in character, speak in the first person, give substantive and specific opinions rather than vague agreement, disagree strongly where they genuinely would (the tension is the point), not break character, and keep each turn to roughly 200-300 words.
 
+For each expert, also provide informationNeeds: 1-4 concrete descriptions of the evidence that expert would want to ground its argument, written in that expert's own voice. The user will try to supply matching documents to that expert's private corpus before the debate. CRITICAL: describe the KIND of evidence (data, document types, records), never fabricate specific titles, authors, dates, or citations — the user, not you, knows what they actually have. Make the needs specific to the expert's lens (the skeptic wants failure evidence and hidden costs; the visionary wants signals of upside; the operator wants constraints and precedents). It's expected that the user won't have all of them.
+
 Be warm and concise in your interview questions. The user is not a prompt engineer — keep the conversation natural.`;
 }
 
@@ -94,6 +103,10 @@ export interface FacilitatorPanel {
   type: "panel";
   experts: Expert[];
   assistant: Anthropic.MessageParam;
+  // The `propose_panel` call is a tool_use; the API requires a matching tool_result to
+  // immediately follow it in the history. Append this right after `assistant` so later
+  // turns (e.g. "regenerate") don't leave a dangling tool_use.
+  toolResult: Anthropic.MessageParam;
 }
 
 export type FacilitatorResult = FacilitatorQuestion | FacilitatorPanel;
@@ -119,6 +132,9 @@ export function normalizeExperts(raw: ProposedExpert[]): Expert[] {
       displayName: e.displayName?.trim() || `Expert ${i + 1}`,
       model: MODELS.expert,
       systemPrompt: e.systemPrompt?.trim() ?? "",
+      informationNeeds: (e.informationNeeds ?? [])
+        .map((n) => n.trim())
+        .filter(Boolean),
     };
   });
 }
@@ -151,7 +167,17 @@ export async function facilitatorTurn(
   if (toolUse) {
     const input = toolUse.input as { experts?: ProposedExpert[] };
     const experts = normalizeExperts(input.experts ?? []);
-    return { type: "panel", experts, assistant };
+    const toolResult: Anthropic.MessageParam = {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: toolUse.id,
+          content: "Panel received and shown to the user for review and editing.",
+        },
+      ],
+    };
+    return { type: "panel", experts, assistant, toolResult };
   }
 
   const text = final.content
