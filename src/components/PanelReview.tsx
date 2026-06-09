@@ -30,6 +30,8 @@ export function PanelReview({
 }) {
   const [panelName, setPanelName] = useState("");
   const [saved, setSaved] = useState(false);
+  const [hasSaved, setHasSaved] = useState(false); // sticky: saved this panel at least once?
+  const [confirmingStart, setConfirmingStart] = useState(false); // "save before running?" nag
 
   function updateExpert(index: number, patch: Partial<Expert>) {
     onExpertsChange(experts.map((x, i) => (i === index ? { ...x, ...patch } : x)));
@@ -56,8 +58,24 @@ export function PanelReview({
     const name = panelName.trim();
     if (!name || !onSavePanel) return;
     onSavePanel(name);
+    setHasSaved(true);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
+    // If the user hit "Start" on an unsaved panel and is saving in response to the nag,
+    // proceed into the roundtable once it's saved.
+    if (confirmingStart) {
+      setConfirmingStart(false);
+      onStart();
+    }
+  }
+
+  // Guardrail: don't let an unsaved panel run off into a roundtable and get lost.
+  function handleStart() {
+    if (!onSavePanel || hasSaved) {
+      onStart();
+      return;
+    }
+    setConfirmingStart(true);
   }
 
   const canStart =
@@ -178,13 +196,36 @@ export function PanelReview({
           </button>
         )}
         <button
-          onClick={onStart}
+          onClick={handleStart}
           disabled={!canStart}
           className="ml-auto rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-40"
         >
           Start roundtable →
         </button>
       </div>
+
+      {confirmingStart && (
+        <div className="space-y-2 rounded-lg border border-amber-900 bg-amber-950/20 p-3">
+          <p className="text-xs text-amber-200">
+            This panel isn’t saved — it and its documents will be lost once you leave. Name and
+            save it below to reuse it later, or run it anyway.
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onStart}
+              className="rounded-lg border border-amber-800 px-3 py-1.5 text-xs text-amber-200 hover:border-amber-600"
+            >
+              Start without saving
+            </button>
+            <button
+              onClick={() => setConfirmingStart(false)}
+              className="text-xs text-neutral-500 hover:text-neutral-300"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {onSavePanel && (
         <div className="flex items-center gap-2">
@@ -193,14 +234,16 @@ export function PanelReview({
             onChange={(e) => setPanelName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && save()}
             placeholder="Name this panel to save it (with its documents)…"
-            className="flex-1 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-xs text-white outline-none focus:border-violet-500"
+            className={`flex-1 rounded-lg border bg-neutral-950 px-3 py-1.5 text-xs text-white outline-none focus:border-violet-500 ${
+              confirmingStart ? "border-amber-700" : "border-neutral-800"
+            }`}
           />
           <button
             onClick={save}
             disabled={!panelName.trim()}
             className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:border-neutral-500 disabled:opacity-40"
           >
-            {saved ? "Saved ✓" : "Save panel"}
+            {saved ? "Saved ✓" : confirmingStart ? "Save & start" : "Save panel"}
           </button>
         </div>
       )}
