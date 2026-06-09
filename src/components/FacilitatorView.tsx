@@ -64,6 +64,9 @@ export function FacilitatorView({
       messages.current.push(result.assistant);
 
       if (result.type === "panel") {
+        // The panel came back as a tool_use; append its tool_result so the history stays
+        // valid for later turns (e.g. "Regenerate panel").
+        messages.current.push(result.toolResult);
         // A fresh panel means new expert ids — drop any docs attached to a prior panel
         // so stale (or id-colliding) experts can't inherit them.
         onResetExpertDocs();

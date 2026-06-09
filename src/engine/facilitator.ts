@@ -103,6 +103,10 @@ export interface FacilitatorPanel {
   type: "panel";
   experts: Expert[];
   assistant: Anthropic.MessageParam;
+  // The `propose_panel` call is a tool_use; the API requires a matching tool_result to
+  // immediately follow it in the history. Append this right after `assistant` so later
+  // turns (e.g. "regenerate") don't leave a dangling tool_use.
+  toolResult: Anthropic.MessageParam;
 }
 
 export type FacilitatorResult = FacilitatorQuestion | FacilitatorPanel;
@@ -163,7 +167,17 @@ export async function facilitatorTurn(
   if (toolUse) {
     const input = toolUse.input as { experts?: ProposedExpert[] };
     const experts = normalizeExperts(input.experts ?? []);
-    return { type: "panel", experts, assistant };
+    const toolResult: Anthropic.MessageParam = {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: toolUse.id,
+          content: "Panel received and shown to the user for review and editing.",
+        },
+      ],
+    };
+    return { type: "panel", experts, assistant, toolResult };
   }
 
   const text = final.content
