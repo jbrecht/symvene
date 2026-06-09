@@ -59,9 +59,18 @@ frozen unit and reused across questions.
 - This is where **per-expert corpus persistence** landed (a saved panel's frozen expert ids
   make it safe).
 
+**On-demand visuals — DONE.** A **Visualize** button on the finished debate runs a forced-tool
+Sonnet pass (`engine/visualize.ts`) that returns curated visualization specs — Mermaid diagrams
+(agreement maps, recommendation quadrants) and Vega-Lite data charts (only from numbers actually
+in the debate). Rendered client-side via lazy-loaded `mermaid`/`vega-embed`
+(`components/Visuals|MermaidDiagram|VegaChart.tsx`); embedded in the `.md` export. Deps: mermaid,
+vega-embed.
+
 **Still TODO for Phase 2:**
 - Possible polish: reranking; per-lens query shaping; clickable `[Source N]` citations in the
   UI; let the Facilitator see the corpus; agentic/mid-debate document requests.
+- Visuals follow-ups: more chart types, edit/regenerate a single visual, a one-shot "repair" retry
+  for a spec that fails to render.
 
 ## Later
 - Phase 3: optional accounts / sharing / hosted panels.

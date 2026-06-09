@@ -4,8 +4,12 @@ import { runRoundtable, ROUND_TITLES } from "../engine/roundtable";
 import { runSynthesis } from "../engine/synthesizer";
 import { retrieve } from "../engine/rag";
 import { formatSources, scopedChunks } from "../engine/retrieval";
-import { toMarkdown, transcriptFilename } from "../engine/transcript";
+import { toMarkdown, transcriptFilename, type ExportVisual } from "../engine/transcript";
+import { generateVisualizations } from "../engine/visualize";
+import type { Visualization } from "../engine/visualize";
+import { vegaSpecToPng } from "../lib/vegaImage";
 import { Markdown } from "./Markdown";
+import { Visuals } from "./Visuals";
 import type { DocChunk } from "../engine/retrieval";
 import type { Expert, ExpertResponse } from "../engine/types";
 
@@ -44,11 +48,16 @@ export function RoundtableView({
 }) {
   const [state, setState] = useState<RunState>(INITIAL);
   const [copied, setCopied] = useState(false);
+  const [viz, setViz] = useState<{
+    status: "idle" | "generating" | "done" | "error";
+    items: Visualization[];
+    error: string;
+  }>({ status: "idle", items: [], error: "" });
   const started = useRef(false);
 
   const hasCorpus = !!voyageKey && chunks.length > 0;
 
-  function transcriptMarkdown() {
+  function transcriptMarkdown(visuals: ExportVisual[] = viz.items) {
     const grounding =
       state.passageCount > 0
         ? `Grounded in ${state.passageCount} passage${state.passageCount === 1 ? "" : "s"} from ${state.sourceDocCount} document${state.sourceDocCount === 1 ? "" : "s"}.`
@@ -59,11 +68,42 @@ export function RoundtableView({
       rounds: state.rounds,
       synthesis: state.synthesis,
       grounding,
+      visuals,
     });
   }
 
-  function downloadTranscript() {
-    const blob = new Blob([transcriptMarkdown()], { type: "text/markdown;charset=utf-8" });
+  async function visualize() {
+    setViz({ status: "generating", items: [], error: "" });
+    try {
+      const items = await generateVisualizations(makeClient(apiKey), {
+        brief,
+        experts,
+        rounds: state.rounds,
+        synthesis: state.synthesis,
+      });
+      setViz({ status: "done", items, error: "" });
+    } catch (err) {
+      setViz({
+        status: "error",
+        items: [],
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  async function downloadTranscript() {
+    // Rasterise Vega-Lite charts to embedded PNGs so the .md renders anywhere (Mermaid
+    // renders natively in GitHub/VS Code, so it stays a code block).
+    const visuals: ExportVisual[] = [];
+    for (const v of viz.items) {
+      if (v.type === "vega_lite") {
+        const image = await vegaSpecToPng(v.spec);
+        visuals.push(image ? { ...v, image } : v);
+      } else {
+        visuals.push(v);
+      }
+    }
+    const blob = new Blob([transcriptMarkdown(visuals)], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -245,6 +285,37 @@ export function RoundtableView({
               <span className="text-neutral-600">…</span>
             )}
           </div>
+        </section>
+      )}
+
+      {state.status === "done" && (
+        <section>
+          <div className="mb-3 flex items-center gap-3">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-sky-400">
+              Visuals
+            </h2>
+            {viz.status === "generating" ? (
+              <span className="text-xs text-violet-400">Generating…</span>
+            ) : (
+              <button
+                onClick={visualize}
+                className="rounded-lg border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-neutral-500"
+              >
+                {viz.status === "idle" ? "Visualize debate" : "Regenerate"}
+              </button>
+            )}
+          </div>
+          {viz.status === "error" && (
+            <p className="rounded-lg border border-red-900 bg-red-950/40 p-3 text-xs text-red-300">
+              {viz.error}
+            </p>
+          )}
+          {viz.status === "done" && viz.items.length === 0 && (
+            <p className="text-xs text-neutral-500">
+              The model didn't find a visual that would add much clarity here.
+            </p>
+          )}
+          {viz.items.length > 0 && <Visuals items={viz.items} />}
         </section>
       )}
 

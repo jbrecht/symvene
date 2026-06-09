@@ -82,7 +82,12 @@ docs are session-scoped (in-memory only)** because expert ids aren't stable acro
 - **`rag.ts`** — orchestration: `ingestDocument()` (chunk → embed → assemble, scoped by
   optional `expertId`) and `retrieve()` (embed query → search). `DEFAULT_TOP_K`.
 - **`transcript.ts`** — `toMarkdown()` / `transcriptFilename()`: render a finished debate as a
-  Markdown document (pure; the component does the file/clipboard side).
+  Markdown document (pure; the component does the file/clipboard side). `toMarkdown` optionally
+  embeds generated visuals as ` ```mermaid `/` ```json ` blocks.
+- **`visualize.ts`** — on-demand visualization pass: `generateVisualizations()` makes a Sonnet
+  call with a **forced** `propose_visualizations` tool (same pattern as `facilitator.ts`) and
+  returns `Visualization[]` (`type: "mermaid" | "vega_lite"`, `title`, `caption`, `spec` string).
+  The model curates (empty array = nothing worth showing); slop guards forbid fabricated data.
 
 ### UI (`src/`)
 
@@ -112,6 +117,10 @@ docs are session-scoped (in-memory only)** because expert ids aren't stable acro
 - **`components/Markdown.tsx`** — renders model output (expert turns + synthesis) as Markdown
   via `react-markdown`/`remark-gfm`, styled with the Tailwind typography plugin. The model
   emits Markdown, so display goes through this rather than raw `whitespace-pre-wrap`.
+- **`components/Visuals.tsx` + `MermaidDiagram.tsx` + `VegaChart.tsx`** — render the on-demand
+  visuals. `mermaid` and `vega-embed` are **lazy-imported inside** the leaf components (heavy;
+  kept out of the initial bundle, like pdfjs). A bad spec degrades to an inline error per item.
+  `RoundtableView`'s done state has a **Visualize** button that runs `generateVisualizations`.
 - **`components/SourcePanel.tsx`** — collapsible "source material" section on the compose
   screen: Voyage key gate, a shared-scope `DocUploader`, and the **shared** doc list.
 - **`lib/storage.ts`** — `localStorage` keys (try/catch for private mode): the Anthropic key
