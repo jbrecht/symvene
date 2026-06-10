@@ -2,9 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import type Anthropic from "@anthropic-ai/sdk";
 import { makeClient } from "../engine/client";
 import { facilitatorTurn } from "../engine/facilitator";
+import { retrieve } from "../engine/rag";
+import { formatSources } from "../engine/retrieval";
 import type { Expert } from "../engine/types";
 import { PanelReview } from "./PanelReview";
 import type { DocChunk, RagDoc } from "../engine/retrieval";
+
+// How many brief-relevant passages the Facilitator gets to read before designing the panel.
+const FACILITATOR_TOP_K = 8;
 
 type LogEntry = { speaker: "facilitator" | "you"; text: string };
 
@@ -20,6 +25,7 @@ export function FacilitatorView({
   expertCount,
   voyageKey,
   expertDocs,
+  sharedChunks,
   onPanelReady,
   onBack,
   onExpertDocIngested,
@@ -32,6 +38,7 @@ export function FacilitatorView({
   expertCount: number | null;
   voyageKey: string | null;
   expertDocs: RagDoc[];
+  sharedChunks: DocChunk[]; // shared-scope corpus the Facilitator may read for panel design
   onPanelReady: (experts: Expert[]) => void;
   onBack: () => void;
   onExpertDocIngested: (doc: RagDoc, chunks: DocChunk[]) => Promise<void>;
@@ -46,11 +53,33 @@ export function FacilitatorView({
   const [answer, setAnswer] = useState("");
   const [error, setError] = useState("");
 
+  // Number of shared docs the Facilitator read before designing the panel (0 = none).
+  const [readDocCount, setReadDocCount] = useState(0);
+
   // The Anthropic message history drives the conversation; kept in a ref so async
   // turns always see the latest without re-rendering on every append.
   const messages = useRef<Anthropic.MessageParam[]>([]);
   const client = useRef<Anthropic | null>(null);
+  const corpusContext = useRef<string | undefined>(undefined);
   const started = useRef(false);
+
+  // Give the Facilitator a view of the shared corpus: the doc names plus the passages
+  // most relevant to the brief. Non-fatal — on retrieval failure it falls back to doc
+  // names alone, and with no corpus at all it stays undefined.
+  async function buildCorpusContext(): Promise<void> {
+    if (!voyageKey || sharedChunks.length === 0) return;
+    const docNames = [...new Set(sharedChunks.map((c) => c.docName))];
+    let context = `Documents provided: ${docNames.join(", ")}.`;
+    try {
+      const retrieved = await retrieve(voyageKey, brief, sharedChunks, FACILITATOR_TOP_K);
+      const sources = formatSources(retrieved);
+      if (sources) context += `\n\n${sources}`;
+    } catch {
+      // doc names alone are still useful context
+    }
+    corpusContext.current = context;
+    setReadDocCount(docNames.length);
+  }
 
   async function runTurn() {
     setStatus("thinking");
@@ -61,7 +90,8 @@ export function FacilitatorView({
         client.current!,
         messages.current,
         expertCount,
-        { onText: (delta) => setStreaming((s) => s + delta) }
+        { onText: (delta) => setStreaming((s) => s + delta) },
+        corpusContext.current
       );
       messages.current.push(result.assistant);
 
@@ -86,14 +116,15 @@ export function FacilitatorView({
     }
   }
 
-  // Kick off the interview with the user's brief as the opening message.
+  // Kick off the interview with the user's brief as the opening message, after letting
+  // the Facilitator read the shared corpus.
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     client.current = makeClient(apiKey);
     messages.current = [{ role: "user", content: brief }];
     setLog([{ speaker: "you", text: brief }]);
-    void runTurn();
+    void buildCorpusContext().then(runTurn);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -119,6 +150,13 @@ export function FacilitatorView({
 
   return (
     <div className="space-y-6">
+      {readDocCount > 0 && (
+        <p className="text-xs text-emerald-400">
+          The Facilitator has read your {readDocCount} source document
+          {readDocCount === 1 ? "" : "s"} and will design the panel around them.
+        </p>
+      )}
+
       {/* Conversation transcript */}
       <div className="space-y-4">
         {log.map((entry, i) => (

@@ -62,7 +62,7 @@ const PROPOSE_PANEL_TOOL: Anthropic.Tool = {
   },
 };
 
-function buildFacilitatorSystem(expertCount?: number | null): string {
+function buildFacilitatorSystem(expertCount?: number | null, corpusContext?: string): string {
   const countRule =
     expertCount != null
       ? `The user has asked for exactly ${expertCount} experts. Propose exactly ${expertCount}.`
@@ -86,7 +86,17 @@ Each expert's systemPrompt is the actual prompt that expert will run on during t
 
 For each expert, also provide informationNeeds: 1-4 concrete descriptions of the evidence that expert would want to ground its argument, written in that expert's own voice. The user will try to supply matching documents to that expert's private corpus before the debate. CRITICAL: describe the KIND of evidence (data, document types, records), never fabricate specific titles, authors, dates, or citations — the user, not you, knows what they actually have. Make the needs specific to the expert's lens (the skeptic wants failure evidence and hidden costs; the visionary wants signals of upside; the operator wants constraints and precedents). It's expected that the user won't have all of them.
 
-Be warm and concise in your interview questions. The user is not a prompt engineer — keep the conversation natural.`;
+Be warm and concise in your interview questions. The user is not a prompt engineer — keep the conversation natural.${
+    corpusContext
+      ? `
+
+SOURCE MATERIAL. The user has already loaded source documents that the experts will draw on during the debate. Here are the documents and the passages most relevant to the brief:
+
+${corpusContext}
+
+Use this when designing the panel: anchor the experts' lenses in tensions actually present in this material, and write informationNeeds that ask for evidence NOT already covered here — never re-request what the user has already provided.`
+      : ""
+  }`;
 }
 
 export interface FacilitatorCallbacks {
@@ -142,16 +152,19 @@ export function normalizeExperts(raw: ProposedExpert[]): Expert[] {
 // Run one Facilitator turn against the running message history. Returns either a
 // clarifying question (stream it with cb.onText) or the proposed panel. The returned
 // `assistant` message must be appended to the history before the next turn.
+// `corpusContext` is an optional rendering of the user's shared source material
+// (doc names + brief-relevant passages) so the panel design reflects the actual evidence.
 export async function facilitatorTurn(
   client: Anthropic,
   messages: Anthropic.MessageParam[],
   expertCount?: number | null,
-  cb: FacilitatorCallbacks = {}
+  cb: FacilitatorCallbacks = {},
+  corpusContext?: string
 ): Promise<FacilitatorResult> {
   const stream = client.messages.stream({
     model: MODELS.facilitator,
     max_tokens: 4096,
-    system: buildFacilitatorSystem(expertCount),
+    system: buildFacilitatorSystem(expertCount, corpusContext),
     tools: [PROPOSE_PANEL_TOOL],
     messages,
   });

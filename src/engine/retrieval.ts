@@ -31,7 +31,9 @@ export interface DocChunk {
 
 export interface RetrievedChunk {
   chunk: DocChunk;
-  score: number; // cosine similarity in [-1, 1]
+  // Cosine similarity in [-1, 1] when produced by `search()`; replaced by the
+  // reranker's relevance score (roughly [0, 1]) when rag.ts reranks.
+  score: number;
 }
 
 // The chunks an expert may retrieve from: its own private documents plus every shared
