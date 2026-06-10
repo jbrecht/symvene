@@ -66,9 +66,17 @@ in the debate). Rendered client-side via lazy-loaded `mermaid`/`vega-embed`
 (`components/Visuals|MermaidDiagram|VegaChart.tsx`); embedded in the `.md` export. Deps: mermaid,
 vega-embed.
 
+**RAG quality — DONE.** Retrieval over-retrieves 4× by cosine then reranks down to top-k with
+Voyage's cross-encoder (`rerank()` in `engine/voyage.ts`, wired in `rag.ts#retrieve`; rerank
+failure degrades to cosine order). `[Source N]` citations in expert turns are clickable —
+`Markdown` linkifies the pattern and `RoundtableView`'s `TurnCard` reveals the cited chunk.
+The Facilitator reads the shared corpus before designing the panel (doc names + brief-relevant
+passages injected into its system prompt; `informationNeeds` are told not to re-request what's
+already provided).
+
 **Still TODO for Phase 2:**
-- Possible polish: reranking; per-lens query shaping; clickable `[Source N]` citations in the
-  UI; let the Facilitator see the corpus; agentic/mid-debate document requests.
+- Possible polish: per-lens query shaping (persona-shaped retrieval queries);
+  agentic/mid-debate document requests.
 - Visuals follow-ups: more chart types, edit/regenerate a single visual, a one-shot "repair" retry
   for a spec that fails to render.
 

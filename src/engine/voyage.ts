@@ -4,10 +4,15 @@
 // except to Voyage's own API.
 
 const VOYAGE_URL = "https://api.voyageai.com/v1/embeddings";
+const VOYAGE_RERANK_URL = "https://api.voyageai.com/v1/rerank";
 
 // Default general-purpose retrieval model (1024 dims). Change here to switch the
 // whole app; voyage-4-lite is a cheaper option, voyage-4-large a higher-quality one.
 export const VOYAGE_MODEL = "voyage-4";
+
+// Cross-encoder reranker used to re-order over-retrieved candidates; rerank-2.5-lite
+// is the cheaper option.
+export const VOYAGE_RERANK_MODEL = "rerank-2.5";
 
 // Voyage accepts up to 1000 inputs per request, but there's also a per-request token
 // cap. Batching by count keeps us comfortably under it for typical chunk sizes.
@@ -74,6 +79,48 @@ export async function embed(
   }
 
   return out;
+}
+
+export interface RerankResult {
+  index: number; // position in the input `documents` array
+  relevanceScore: number; // higher is more relevant, roughly [0, 1]
+}
+
+interface VoyageRerankResponse {
+  data?: { index: number; relevance_score: number }[];
+}
+
+// Rerank `documents` against `query` with Voyage's cross-encoder, returning the top-k
+// most relevant in descending relevance order. Same CORS story as embeddings: callable
+// straight from the browser with the user's own key.
+export async function rerank(
+  apiKey: string,
+  query: string,
+  documents: string[],
+  topK: number,
+  model: string = VOYAGE_RERANK_MODEL
+): Promise<RerankResult[]> {
+  const res = await fetch(VOYAGE_RERANK_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ model, query, documents, top_k: topK }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Voyage rerank error (${res.status}): ${await readError(res)}`);
+  }
+
+  const json: VoyageRerankResponse = await res.json();
+  if (!json.data) {
+    throw new Error("Voyage rerank returned an unrecognised response shape");
+  }
+  return json.data.map((item) => ({
+    index: item.index,
+    relevanceScore: item.relevance_score,
+  }));
 }
 
 // Cheap call to verify a pasted Voyage key (and the configured model) actually work.

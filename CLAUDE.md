@@ -58,7 +58,10 @@ DOM APIs into `src/engine/`.
   the history before the next turn. Panel size is bounded by `MIN_EXPERTS`/`MAX_EXPERTS`
   (2–5, default 3). `normalizeExperts()` assigns the expert model and de-dupes ids. The
   `propose_panel` tool also returns per-expert `informationNeeds` (descriptions of evidence
-  each expert wants — *not* fabricated citations), surfaced on the review cards.
+  each expert wants — *not* fabricated citations), surfaced on the review cards. An optional
+  `corpusContext` (shared-doc names + brief-relevant passages, built by `FacilitatorView`) is
+  injected into the system prompt so the panel design reflects the user's actual source
+  material and `informationNeeds` don't re-request what's already provided.
 
 #### RAG (client-side, optional — Phase 2)
 
@@ -67,10 +70,11 @@ The corpus is a flat list of embedded chunks; retrieval is brute-force cosine in
 document every expert sees; a value ⇒ a document private to that one expert. `scopedChunks()`
 returns an expert's view (its own ∪ shared). Shared docs persist in IndexedDB; **per-expert
 docs are session-scoped (in-memory only)** because expert ids aren't stable across panels.
-- **`voyage.ts`** — Voyage embeddings client (`embed(key, texts, "document"|"query")`,
-  batched; `validateVoyageKey`). Called directly from the browser — **Voyage returns
-  permissive CORS**, so no backend is needed. `VOYAGE_MODEL` is the single place to change
-  the model. Needs a **second** BYO key (separate from the Anthropic key).
+- **`voyage.ts`** — Voyage embeddings + reranker client (`embed(key, texts, "document"|"query")`,
+  batched; `rerank(key, query, documents, topK)`; `validateVoyageKey`). Called directly from
+  the browser — **Voyage returns permissive CORS**, so no backend is needed. `VOYAGE_MODEL` /
+  `VOYAGE_RERANK_MODEL` are the single places to change the models. Needs a **second** BYO key
+  (separate from the Anthropic key).
 - **`chunk.ts`** — `chunkText()`: paragraph-boundary-aware packing toward ~1200 chars with
   ~150-char overlap; oversized paragraphs are hard-windowed.
 - **`pdf.ts`** — `extractPdfText()` via `pdfjs-dist`. **Dynamically imported** from
@@ -80,7 +84,8 @@ docs are session-scoped (in-memory only)** because expert ids aren't stable acro
   `search()` (top-k with a `minScore` floor), `scopedChunks()` (an expert's own ∪ shared),
   `formatSources()` (renders chunks into the prompt block).
 - **`rag.ts`** — orchestration: `ingestDocument()` (chunk → embed → assemble, scoped by
-  optional `expertId`) and `retrieve()` (embed query → search). `DEFAULT_TOP_K`.
+  optional `expertId`) and `retrieve()` (embed query → over-retrieve `RERANK_OVERSAMPLE`×k by
+  cosine → rerank down to k; rerank failure degrades to cosine order). `DEFAULT_TOP_K`.
 - **`transcript.ts`** — `toMarkdown()` / `transcriptFilename()`: render a finished debate as a
   Markdown document (pure; the component does the file/clipboard side). `toMarkdown` optionally
   embeds generated visuals as ` ```mermaid `/` ```json ` blocks.
@@ -116,7 +121,9 @@ docs are session-scoped (in-memory only)** because expert ids aren't stable acro
   caller. Used by both `SourcePanel` (shared) and `FacilitatorView` (per-expert).
 - **`components/Markdown.tsx`** — renders model output (expert turns + synthesis) as Markdown
   via `react-markdown`/`remark-gfm`, styled with the Tailwind typography plugin. The model
-  emits Markdown, so display goes through this rather than raw `whitespace-pre-wrap`.
+  emits Markdown, so display goes through this rather than raw `whitespace-pre-wrap`. With the
+  optional `onCitation` prop it linkifies `[Source N]` mentions into clickable citations;
+  `RoundtableView`'s `TurnCard` uses this to reveal the cited chunk under the turn.
 - **`components/Visuals.tsx` + `MermaidDiagram.tsx` + `VegaChart.tsx`** — render the on-demand
   visuals. `mermaid` and `vega-embed` are **lazy-imported inside** the leaf components (heavy;
   kept out of the initial bundle, like pdfjs). A bad spec degrades to an inline error per item.

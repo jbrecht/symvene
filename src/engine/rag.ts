@@ -2,7 +2,7 @@
 // most relevant chunks for a query. Framework-agnostic — the Voyage key is passed in
 // by the caller; persistence and UI live elsewhere.
 import { chunkText } from "./chunk";
-import { embed } from "./voyage";
+import { embed, rerank } from "./voyage";
 import { search } from "./retrieval";
 import type { DocChunk, DocKind, RagDoc, RetrievedChunk } from "./retrieval";
 
@@ -20,6 +20,10 @@ export interface IngestResult {
 
 // How many chunks to inject into the debate as source material.
 export const DEFAULT_TOP_K = 6;
+
+// Over-retrieval factor: cosine search casts a net this many times wider than top-k,
+// and the reranker picks the best k from it.
+export const RERANK_OVERSAMPLE = 4;
 
 // Chunk a document, embed every chunk as "document", and assemble the stored shape.
 // Throws if the document has no extractable text (e.g. a scanned PDF).
@@ -59,7 +63,9 @@ export async function ingestDocument(
   return { doc, chunks };
 }
 
-// Embed the query and return the top-k most similar chunks from the corpus.
+// Retrieve the k chunks most relevant to the query: embed the query, over-retrieve
+// candidates by cosine similarity, then rerank them down to k with Voyage's
+// cross-encoder. Rerank failure degrades gracefully to the cosine order.
 export async function retrieve(
   voyageKey: string,
   query: string,
@@ -68,5 +74,25 @@ export async function retrieve(
 ): Promise<RetrievedChunk[]> {
   if (chunks.length === 0 || !query.trim()) return [];
   const [queryEmbedding] = await embed(voyageKey, [query], "query");
-  return search(queryEmbedding, chunks, k);
+  const candidates = search(queryEmbedding, chunks, k * RERANK_OVERSAMPLE);
+
+  // With k or fewer candidates the reranker can't change membership, only order —
+  // not worth a second API call.
+  if (candidates.length <= k) return candidates;
+
+  try {
+    const ranked = await rerank(
+      voyageKey,
+      query,
+      candidates.map((c) => c.chunk.text),
+      k
+    );
+    return ranked.map((r) => ({
+      chunk: candidates[r.index].chunk,
+      score: r.relevanceScore,
+    }));
+  } catch (err) {
+    console.warn("Voyage rerank failed; falling back to cosine order", err);
+    return candidates.slice(0, k);
+  }
 }

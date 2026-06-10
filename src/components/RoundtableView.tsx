@@ -10,7 +10,7 @@ import type { Visualization } from "../engine/visualize";
 import { vegaSpecToPng } from "../lib/vegaImage";
 import { Markdown } from "./Markdown";
 import { Visuals } from "./Visuals";
-import type { DocChunk } from "../engine/retrieval";
+import type { DocChunk, RetrievedChunk } from "../engine/retrieval";
 import type { Expert, ExpertResponse } from "../engine/types";
 
 type RunState = {
@@ -21,6 +21,8 @@ type RunState = {
   passageCount: number; // distinct passages used across the panel (deduped)
   sourceDocCount: number; // distinct documents those passages came from
   sourcesNote: string; // non-fatal warning if retrieval failed
+  // Each expert's retrieved grounding, in [Source N] order — backs the clickable citations.
+  sources: Record<string, RetrievedChunk[]>;
 };
 
 const INITIAL: RunState = {
@@ -31,7 +33,57 @@ const INITIAL: RunState = {
   passageCount: 0,
   sourceDocCount: 0,
   sourcesNote: "",
+  sources: {},
 };
+
+// One expert turn. `sources` is that expert's retrieved grounding in [Source N] order;
+// clicking a citation in the text reveals the cited passage below the turn.
+function TurnCard({ turn, sources }: { turn: ExpertResponse; sources: RetrievedChunk[] }) {
+  const [openSource, setOpenSource] = useState<number | null>(null);
+  const open = openSource != null ? sources[openSource - 1] : undefined;
+
+  return (
+    <article className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
+      <div className="text-sm font-semibold text-white">{turn.displayName}</div>
+      <div className="mt-2 text-sm text-neutral-300">
+        {turn.content ? (
+          <Markdown
+            onCitation={
+              sources.length > 0
+                ? (n) => {
+                    if (n < 1 || n > sources.length) return; // hallucinated citation
+                    setOpenSource((cur) => (cur === n ? null : n));
+                  }
+                : undefined
+            }
+          >
+            {turn.content}
+          </Markdown>
+        ) : (
+          <span className="text-neutral-600">…</span>
+        )}
+      </div>
+      {open && (
+        <div className="mt-3 rounded-lg border border-violet-900/60 bg-violet-950/20 p-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-xs font-medium text-violet-300">
+              Source {openSource} — {open.chunk.docName}
+            </span>
+            <button
+              onClick={() => setOpenSource(null)}
+              className="text-xs text-neutral-500 hover:text-neutral-300"
+            >
+              close
+            </button>
+          </div>
+          <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-neutral-300">
+            {open.chunk.text.trim()}
+          </p>
+        </div>
+      )}
+    </article>
+  );
+}
 
 export function RoundtableView({
   apiKey,
@@ -140,6 +192,7 @@ export function RoundtableView({
         // Dedupe across experts: a shared passage retrieved by several experts counts once.
         const usedPassages = new Set<string>();
         const usedDocs = new Set<string>();
+        const retrievedByExpert: Record<string, RetrievedChunk[]> = {};
         let note = "";
         for (const expert of experts) {
           const scoped = scopedChunks(chunks, expert.id);
@@ -147,6 +200,7 @@ export function RoundtableView({
           try {
             const retrieved = await retrieve(voyageKey!, brief, scoped);
             sourcesByExpert[expert.id] = formatSources(retrieved);
+            retrievedByExpert[expert.id] = retrieved;
             for (const r of retrieved) {
               usedPassages.add(r.chunk.id);
               usedDocs.add(r.chunk.docId);
@@ -162,6 +216,7 @@ export function RoundtableView({
           passageCount: usedPassages.size,
           sourceDocCount: usedDocs.size,
           sourcesNote: note,
+          sources: retrievedByExpert,
         }));
       }
 
@@ -255,19 +310,7 @@ export function RoundtableView({
           </h2>
           <div className="space-y-4">
             {round.map((turn, j) => (
-              <article
-                key={j}
-                className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4"
-              >
-                <div className="text-sm font-semibold text-white">{turn.displayName}</div>
-                <div className="mt-2 text-sm text-neutral-300">
-                  {turn.content ? (
-                    <Markdown>{turn.content}</Markdown>
-                  ) : (
-                    <span className="text-neutral-600">…</span>
-                  )}
-                </div>
-              </article>
+              <TurnCard key={j} turn={turn} sources={state.sources[turn.expertId] ?? []} />
             ))}
           </div>
         </section>

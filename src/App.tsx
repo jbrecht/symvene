@@ -226,6 +226,7 @@ function App() {
               expertCount={stage.expertCount}
               voyageKey={voyageKey}
               expertDocs={docs.filter((d) => d.expertId != null)}
+              sharedChunks={chunks.filter((c) => c.expertId == null)}
               onPanelReady={(experts) =>
                 setStage({ name: "roundtable", brief: stage.brief, experts })
               }
