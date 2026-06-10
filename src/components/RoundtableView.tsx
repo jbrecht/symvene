@@ -121,6 +121,7 @@ export function RoundtableView({
       synthesis: state.synthesis,
       grounding,
       visuals,
+      sources: state.sources,
     });
   }
 
