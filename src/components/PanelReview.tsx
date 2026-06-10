@@ -32,19 +32,24 @@ export function PanelReview({
 }) {
   const [panelName, setPanelName] = useState("");
   const [saved, setSaved] = useState(false);
-  // Sticky: have we saved this panel at least once? A panel loaded from the store counts.
+  // Have we saved this panel at least once? A panel loaded from the store counts.
   const [hasSaved, setHasSaved] = useState(initiallySaved);
+  // Edits since the last save (or since load) — re-arms the "save before running?" nag.
+  const [dirty, setDirty] = useState(false);
   const [confirmingStart, setConfirmingStart] = useState(false); // "save before running?" nag
 
   function updateExpert(index: number, patch: Partial<Expert>) {
+    setDirty(true);
     onExpertsChange(experts.map((x, i) => (i === index ? { ...x, ...patch } : x)));
   }
 
   function removeExpert(index: number) {
+    setDirty(true);
     onExpertsChange(experts.filter((_, i) => i !== index));
   }
 
   function addExpert() {
+    setDirty(true);
     onExpertsChange([
       ...experts,
       {
@@ -57,11 +62,22 @@ export function PanelReview({
     ]);
   }
 
+  async function handleDocIngested(doc: RagDoc, chunks: DocChunk[]) {
+    setDirty(true);
+    await onExpertDocIngested(doc, chunks);
+  }
+
+  function handleRemoveDoc(docId: string) {
+    setDirty(true);
+    onRemoveDoc(docId);
+  }
+
   function save() {
     const name = panelName.trim();
     if (!name || !onSavePanel) return;
     onSavePanel(name);
     setHasSaved(true);
+    setDirty(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
     // If the user hit "Start" on an unsaved panel and is saving in response to the nag,
@@ -72,9 +88,10 @@ export function PanelReview({
     }
   }
 
-  // Guardrail: don't let an unsaved panel run off into a roundtable and get lost.
+  // Guardrail: don't let an unsaved panel (or unsaved edits) run off into a roundtable
+  // and get lost.
   function handleStart() {
-    if (!onSavePanel || hasSaved) {
+    if (!onSavePanel || (hasSaved && !dirty)) {
       onStart();
       return;
     }
@@ -145,7 +162,7 @@ export function PanelReview({
               <DocUploader
                 voyageKey={voyageKey}
                 expertId={expert.id}
-                onIngested={onExpertDocIngested}
+                onIngested={handleDocIngested}
               />
               {expertDocs.filter((d) => d.expertId === expert.id).length > 0 && (
                 <ul className="space-y-1">
@@ -164,7 +181,7 @@ export function PanelReview({
                           </span>
                         </span>
                         <button
-                          onClick={() => onRemoveDoc(doc.id)}
+                          onClick={() => handleRemoveDoc(doc.id)}
                           className="ml-2 text-xs text-neutral-500 hover:text-red-400"
                         >
                           remove
@@ -210,8 +227,9 @@ export function PanelReview({
       {confirmingStart && (
         <div className="space-y-2 rounded-lg border border-amber-900 bg-amber-950/20 p-3">
           <p className="text-xs text-amber-200">
-            This panel isn’t saved — it and its documents will be lost once you leave. Name and
-            save it below to reuse it later, or run it anyway.
+            {hasSaved
+              ? "This panel has unsaved changes — they’ll be lost once you leave. Name and save it below to keep them, or run it anyway."
+              : "This panel isn’t saved — it and its documents will be lost once you leave. Name and save it below to reuse it later, or run it anyway."}
           </p>
           <div className="flex items-center gap-3">
             <button
