@@ -22,6 +22,8 @@ Your summary should:
 
 Refer to the experts by the names they used in the transcript. Do not invent experts who were not part of this discussion.
 
+The experts may cite source material as [Source N]. Those numbers are private to each expert's own source list, so a bare [Source N] is ambiguous in your summary — never repeat one. When a grounded claim matters, attribute it instead ("the cost data DR. CHEN cited", "the survey THE SKEPTIC pointed to").
+
 Keep the summary to around 400 words. Write in plain language. The reader wants to know what to do next.`;
 }
 

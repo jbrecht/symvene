@@ -1,6 +1,7 @@
 // Render a completed debate as a Markdown document for download/copy. Pure and
 // framework-agnostic: the React layer handles the actual file/clipboard side.
 import type { Expert, ExpertResponse } from "./types";
+import type { RetrievedChunk } from "./retrieval";
 import type { Visualization } from "./visualize";
 import { ROUND_TITLES } from "./roundtable";
 
@@ -15,6 +16,9 @@ export interface TranscriptInput {
   synthesis: string;
   grounding?: string; // optional one-line note, e.g. "Grounded in 11 passages from 7 documents."
   visuals?: ExportVisual[];
+  // Each expert's retrieved grounding in [Source N] order (keyed by expert id) — rendered
+  // as an appendix so the citations in the turns resolve outside the app.
+  sources?: Record<string, RetrievedChunk[]>;
 }
 
 export function toMarkdown({
@@ -24,6 +28,7 @@ export function toMarkdown({
   synthesis,
   grounding,
   visuals,
+  sources,
 }: TranscriptInput): string {
   const lines: string[] = ["# symvene debate", ""];
 
@@ -57,6 +62,27 @@ export function toMarkdown({
         lines.push("```" + (v.type === "mermaid" ? "mermaid" : "json"), v.spec.trim(), "```", "");
       }
       if (v.caption) lines.push(`_${v.caption}_`, "");
+    }
+  }
+
+  const groundedExperts = sources ? experts.filter((e) => (sources[e.id] ?? []).length > 0) : [];
+  if (groundedExperts.length > 0) {
+    lines.push("## Source material", "");
+    lines.push(
+      "_Each expert drew on its own numbered source list; a [Source N] citation in a turn refers to that expert's list below._",
+      ""
+    );
+    for (const e of groundedExperts) {
+      lines.push(`### ${e.displayName}`, "");
+      sources![e.id].forEach((r, i) => {
+        // <details> keeps a long appendix collapsed in GitHub/VS Code; the blank lines
+        // around the blockquote make the inner Markdown render.
+        lines.push("<details>", `<summary>Source ${i + 1} — ${r.chunk.docName}</summary>`, "");
+        for (const textLine of r.chunk.text.trim().split("\n")) {
+          lines.push(`> ${textLine}`);
+        }
+        lines.push("", "</details>", "");
+      });
     }
   }
 
